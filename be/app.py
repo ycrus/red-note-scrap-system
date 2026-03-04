@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response, send_file
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from playwright.sync_api import sync_playwright
 import time
@@ -8,46 +8,48 @@ import json
 import io
 import threading
 import queue
-import os
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-# ====== COOKIES — Update when expired ======
-COOKIES = [
-    {"name": "a1", "value": "19cad415cfc4ppkz4p0uj05qkoj3284uupcyq1is230000215972", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "webId", "value": "042e8f5d10df94c71adca24feb2064f9", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "web_session", "value": "040069b8d26c38ca7561047d933b4b5e36e404", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "xsecappid", "value": "xhs-pc-web", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "webBuild", "value": "5.13.0", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "websectiga", "value": "cffd9dcea65962b05ab048ac76962acee933d26157113bb213105a116241fa6c", "domain": ".xiaohongshu.com", "path": "/"},
-    {"name": "sec_poison_id", "value": "3c83f72a-bd78-4958-a679-e658f5425833", "domain": ".xiaohongshu.com", "path": "/"},
-]
-
 # Global state
 scrape_results = []
 log_queue = queue.Queue()
 is_scraping = False
+current_cookies = []  # Dynamic cookies — set via /api/cookies
 
 
 def push_log(msg):
     log_queue.put({"type": "log", "message": msg, "time": datetime.now().strftime("%H:%M:%S")})
 
-
 def push_result(data):
     log_queue.put({"type": "result", "data": data})
-
 
 def push_done(total):
     log_queue.put({"type": "done", "total": total})
 
-
 def push_error(msg):
-    log_queue.put({"type": "error", "message": msg})
+    log_queue.put({"type": "error", "message": msg, "time": datetime.now().strftime("%H:%M:%S")})
 
 
-def run_scraper(keywords, max_scroll):
+def parse_cookie_string(cookie_str):
+    """Parse raw cookie string like: a1=xxx; web_session=yyy; ..."""
+    cookies = []
+    for part in cookie_str.split(";"):
+        part = part.strip()
+        if "=" in part:
+            name, _, value = part.partition("=")
+            cookies.append({
+                "name": name.strip(),
+                "value": value.strip(),
+                "domain": ".xiaohongshu.com",
+                "path": "/"
+            })
+    return cookies
+
+
+def run_scraper(keywords, max_scroll, cookies):
     global scrape_results, is_scraping
     scrape_results = []
     is_scraping = True
@@ -58,7 +60,7 @@ def run_scraper(keywords, max_scroll):
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
             )
-            context.add_cookies(COOKIES)
+            context.add_cookies(cookies)
             page = context.new_page()
 
             for keyword in keywords:
@@ -70,7 +72,7 @@ def run_scraper(keywords, max_scroll):
                     time.sleep(random.uniform(3, 5))
 
                     if "login" in page.url:
-                        push_error("⚠️ Cookie expired! Please update cookies in app.py")
+                        push_error("⚠️ Cookie expired or invalid! Please update cookies.")
                         break
 
                     for i in range(max_scroll):
@@ -115,7 +117,7 @@ def run_scraper(keywords, max_scroll):
                     time.sleep(random.uniform(5, 8))
 
                 except Exception as e:
-                    push_error(f"❌ Error on keyword '{keyword}': {str(e)}")
+                    push_error(f"❌ Error on '{keyword}': {str(e)}")
 
             browser.close()
 
@@ -126,11 +128,39 @@ def run_scraper(keywords, max_scroll):
         push_done(len(scrape_results))
 
 
+# ── ROUTES ──────────────────────────────────────────
+
+@app.route("/api/cookies", methods=["POST"])
+def set_cookies():
+    """Accept raw cookie string from browser and store it."""
+    global current_cookies
+    body = request.json
+    raw = body.get("raw", "").strip()
+
+    if not raw:
+        return jsonify({"error": "No cookie string provided"}), 400
+
+    current_cookies = parse_cookie_string(raw)
+    names = [c["name"] for c in current_cookies]
+    return jsonify({"status": "ok", "count": len(current_cookies), "keys": names})
+
+
+@app.route("/api/cookies", methods=["GET"])
+def get_cookies():
+    """Return current cookie names (not values, for security)."""
+    names = [c["name"] for c in current_cookies]
+    return jsonify({"count": len(current_cookies), "keys": names})
+
+
 @app.route("/api/scrape", methods=["POST"])
 def start_scrape():
     global is_scraping, log_queue
+
     if is_scraping:
         return jsonify({"error": "Scraping already in progress"}), 400
+
+    if not current_cookies:
+        return jsonify({"error": "No cookies set! Please add cookies first."}), 400
 
     body = request.json
     keywords = [k.strip() for k in body.get("keywords", []) if k.strip()]
@@ -139,11 +169,10 @@ def start_scrape():
     if not keywords:
         return jsonify({"error": "No keywords provided"}), 400
 
-    # Clear queue
     while not log_queue.empty():
         log_queue.get()
 
-    thread = threading.Thread(target=run_scraper, args=(keywords, max_scroll))
+    thread = threading.Thread(target=run_scraper, args=(keywords, max_scroll, list(current_cookies)))
     thread.daemon = True
     thread.start()
 
@@ -180,8 +209,8 @@ def download_csv():
     writer = csv.DictWriter(output, fieldnames=["keyword", "title", "link", "author", "likes", "date"])
     writer.writeheader()
     writer.writerows(scrape_results)
-
     output.seek(0)
+
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -191,7 +220,11 @@ def download_csv():
 
 @app.route("/api/status")
 def status():
-    return jsonify({"is_scraping": is_scraping, "total_results": len(scrape_results)})
+    return jsonify({
+        "is_scraping": is_scraping,
+        "total_results": len(scrape_results),
+        "cookies_loaded": len(current_cookies)
+    })
 
 
 if __name__ == "__main__":
