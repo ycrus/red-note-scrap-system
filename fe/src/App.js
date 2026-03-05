@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 
 const API = "http://localhost:5001";
 
@@ -62,6 +63,12 @@ export default function App() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionResults, setSessionResults] = useState([]);
 
+  // Dashboard state
+  const [dashKeywords, setDashKeywords] = useState([]);
+  const [dashSentiment, setDashSentiment] = useState({ overall: [], by_keyword: [] });
+  const [dashTimeline, setDashTimeline] = useState([]);
+  const [dashAuthors, setDashAuthors] = useState([]);
+
   const logRef = useRef(null);
   const esRef = useRef(null);
 
@@ -84,6 +91,13 @@ export default function App() {
 
   const fetchHistory = () => {
     fetch(`${API}/api/history`).then(r => r.json()).then(d => setHistory(d)).catch(() => {});
+  };
+
+  const fetchDashboard = () => {
+    fetch(`${API}/api/analytics/keywords`).then(r => r.json()).then(d => setDashKeywords(d)).catch(() => {});
+    fetch(`${API}/api/analytics/sentiment`).then(r => r.json()).then(d => setDashSentiment(d)).catch(() => {});
+    fetch(`${API}/api/analytics/timeline`).then(r => r.json()).then(d => setDashTimeline([...d].reverse())).catch(() => {});
+    fetch(`${API}/api/analytics/top-authors`).then(r => r.json()).then(d => setDashAuthors(d)).catch(() => {});
   };
 
   const fetchSessionResults = async (sessionId) => {
@@ -156,6 +170,7 @@ export default function App() {
           setTab("results");
           fetchSentimentStatus();
           fetchHistory();
+          fetchDashboard();
           es.close();
         }
       };
@@ -241,7 +256,7 @@ export default function App() {
           <div style={{ width: 30, height: 30, background: "#ff2442", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>📕</div>
           <div>
             <div style={{ fontFamily: "Syne, sans-serif", fontSize: 17, fontWeight: 800 }}>RedNote Scraper</div>
-            <div style={{ fontSize: 10, color: "#f3f4f5ff" }}>小红书 · Data Collector + Sentiment Analysis</div>
+            <div style={{ fontSize: 10, color: "#475569" }}>小红书 · Data Collector + Sentiment Analysis</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -278,16 +293,16 @@ export default function App() {
               </div>
             )}
             {!showCookiePanel && cookieStatus !== "ok" && (
-              <div style={{ fontSize: 11, color: "#f5f7f8ff" }}>No cookies loaded. Click <strong style={{ color: "#ff2442" }}>Set Cookies</strong>.</div>
+              <div style={{ fontSize: 11, color: "#475569" }}>No cookies loaded. Click <strong style={{ color: "#ff2442" }}>Set Cookies</strong>.</div>
             )}
           </div>
 
           {/* Keywords */}
           <div>
             <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1 }}>Keywords</label>
-            <div style={{ fontSize: 11, color: "#f5f7f8ff", margin: "4px 0 6px" }}>One keyword per line</div>
+            <div style={{ fontSize: 11, color: "#475569", margin: "4px 0 6px" }}>One keyword per line</div>
             <textarea value={keywords} onChange={e => setKeywords(e.target.value)}
-              placeholder={""} disabled={scraping}
+              placeholder={"高市\n日本経済\n自民党"} disabled={scraping}
               style={{ width: "100%", height: 100, padding: "8px 10px", resize: "vertical" }} />
           </div>
 
@@ -306,7 +321,7 @@ export default function App() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0" }}>🧠 Auto Sentiment</div>
-                <div style={{ fontSize: 10, color: "#f5f7f8ff", marginTop: 2 }}>Analyze while scraping (slower)</div>
+                <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>Analyze while scraping (slower)</div>
               </div>
               <label className="toggle">
                 <input type="checkbox" checked={autoSentiment} onChange={e => setAutoSentiment(e.target.checked)} disabled={!hfConfigured || scraping} />
@@ -332,7 +347,7 @@ export default function App() {
               ].map(s => (
                 <div key={s.label} style={{ textAlign: "center", background: "#0f1117", borderRadius: 8, padding: "8px 4px" }}>
                   <div style={{ fontSize: 18, fontWeight: 700, color: s.color, fontFamily: "Syne, sans-serif" }}>{s.value}</div>
-                  <div style={{ fontSize: 10, color: "#f5f7f8ff" }}>{s.label}</div>
+                  <div style={{ fontSize: 10, color: "#475569" }}>{s.label}</div>
                 </div>
               ))}
             </div>
@@ -367,7 +382,7 @@ export default function App() {
             ].map(s => (
               <div key={s.label} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "#ff2442", fontFamily: "Syne, sans-serif" }}>{s.value}</div>
-                <div style={{ fontSize: 10, color: "#f5f7f8ff", marginTop: 1 }}>{s.label}</div>
+                <div style={{ fontSize: 10, color: "#475569", marginTop: 1 }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -377,9 +392,9 @@ export default function App() {
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", gap: 5 }}>
-              {["logs", "results", "history"].map(t => (
-                <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => { setTab(t); if(t==="history") fetchHistory(); }}>
-                  {t === "logs" ? `📋 Logs (${logs.length})` : t === "results" ? `📊 Results (${results.length})` : `🕘 History (${history.length})`}
+              {["logs", "results", "history", "dashboard"].map(t => (
+                <button key={t} className={`tab ${tab === t ? "active" : ""}`} onClick={() => { setTab(t); if(t==="history") fetchHistory(); if(t==="dashboard") fetchDashboard(); }}>
+                  {t === "logs" ? `📋 Logs (${logs.length})` : t === "results" ? `📊 Results (${results.length})` : t === "history" ? `🕘 History (${history.length})` : `📈 Dashboard`}
                 </button>
               ))}
             </div>
@@ -431,7 +446,7 @@ export default function App() {
                   <thead>
                     <tr style={{ background: "#1a1f2e", position: "sticky", top: 0 }}>
                       {["#", "Keyword", "Title", "Author", "Likes", "Date", "Sentiment", "Link"].map(h => (
-                        <th key={h} style={{ padding: "9px 12px", textAlign: "left", color: "#f5f7f8ff", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #2d3748", whiteSpace: "nowrap" }}>{h}</th>
+                        <th key={h} style={{ padding: "9px 12px", textAlign: "left", color: "#475569", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #2d3748", whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -443,7 +458,7 @@ export default function App() {
                         <td style={{ padding: "9px 12px", maxWidth: 240 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div></td>
                         <td style={{ padding: "9px 12px", color: "#64748b", whiteSpace: "nowrap" }}>{r.author}</td>
                         <td style={{ padding: "9px 12px", color: "#64748b", textAlign: "right" }}>{r.likes}</td>
-                        <td style={{ padding: "9px 12px", color: "#f5f7f8ff", whiteSpace: "nowrap" }}>{r.date}</td>
+                        <td style={{ padding: "9px 12px", color: "#475569", whiteSpace: "nowrap" }}>{r.date}</td>
                         <td style={{ padding: "9px 12px" }}><SentimentBadge sentiment={r.sentiment} score={r.sentiment_score} /></td>
                         <td style={{ padding: "9px 12px" }}><a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a></td>
                       </tr>
@@ -483,7 +498,7 @@ export default function App() {
                         <span key={k} style={{ background: "#0f1117", border: "1px solid #2d3748", borderRadius: 4, padding: "1px 6px", fontSize: 10, color: "#ff2442" }}>{k}</span>
                       ))}
                     </div>
-                    <div style={{ display: "flex", gap: 12, fontSize: 10, color: "#f5f7f8ff" }}>
+                    <div style={{ display: "flex", gap: 12, fontSize: 10, color: "#475569" }}>
                       <span>📄 {s.total_results} results</span>
                       <span>🔄 {s.max_scroll}x scroll</span>
                     </div>
@@ -508,7 +523,7 @@ export default function App() {
                       <thead>
                         <tr style={{ background: "#1a1f2e", position: "sticky", top: 0 }}>
                           {["#", "Keyword", "Title", "Author", "Likes", "Date", "Sentiment", "Link"].map(h => (
-                            <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#f5f7f8ff", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #2d3748", whiteSpace: "nowrap" }}>{h}</th>
+                            <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#475569", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #2d3748", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -520,7 +535,7 @@ export default function App() {
                             <td style={{ padding: "8px 12px", maxWidth: 220 }}><div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div></td>
                             <td style={{ padding: "8px 12px", color: "#64748b", whiteSpace: "nowrap" }}>{r.author}</td>
                             <td style={{ padding: "8px 12px", color: "#64748b", textAlign: "right" }}>{r.likes}</td>
-                            <td style={{ padding: "8px 12px", color: "#f5f7f8ff", whiteSpace: "nowrap" }}>{r.date}</td>
+                            <td style={{ padding: "8px 12px", color: "#475569", whiteSpace: "nowrap" }}>{r.date}</td>
                             <td style={{ padding: "8px 12px" }}><SentimentBadge sentiment={r.sentiment} score={r.sentiment_score} /></td>
                             <td style={{ padding: "8px 12px" }}><a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a></td>
                           </tr>
@@ -532,7 +547,139 @@ export default function App() {
               )}
             </div>
           )}
-</div>
+          {/* Dashboard */}
+          {tab === "dashboard" && (() => {
+            const COLORS = { positive: "#16a34a", negative: "#ef4444", neutral: "#64748b" };
+            const PIE_COLORS = ["#16a34a", "#ef4444", "#64748b", "#f59e0b"];
+            const totalResults = dashKeywords.reduce((a, b) => a + b.total, 0);
+
+            const StatCard = ({ label, value, sub, color }) => (
+              <div className="card" style={{ padding: 16, textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: color || "#ff2442", fontFamily: "Syne, sans-serif" }}>{value}</div>
+                <div style={{ fontSize: 12, color: "#e2e8f0", marginTop: 2 }}>{label}</div>
+                {sub && <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{sub}</div>}
+              </div>
+            );
+
+            return (
+              <div style={{ flex: 1, overflowY: "auto", maxHeight: "calc(100vh - 100px)", padding: 24 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "Syne, sans-serif" }}>Analytics Dashboard</div>
+                  <button className="btn btn-ghost" onClick={fetchDashboard} style={{ fontSize: 11 }}>↻ Refresh</button>
+                </div>
+
+                {/* Stat cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+                  <StatCard label="Total Posts" value={totalResults} />
+                  <StatCard label="Keywords Tracked" value={dashKeywords.length} color="#7c3aed" />
+                  <StatCard label="Positive" value={dashSentiment.overall.find(s => s.sentiment === "positive")?.total || 0} color="#16a34a" />
+                  <StatCard label="Negative" value={dashSentiment.overall.find(s => s.sentiment === "negative")?.total || 0} color="#ef4444" />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+
+                  {/* Keyword Volume Bar Chart */}
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>📊 Posts per Keyword</div>
+                    {dashKeywords.length === 0 ? (
+                      <div style={{ textAlign: "center", color: "#334155", padding: "30px 0", fontSize: 12 }}>No data yet</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={dashKeywords.slice(0, 10)} margin={{ top: 0, right: 0, left: -20, bottom: 40 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" />
+                          <XAxis dataKey="keyword" tick={{ fill: "#64748b", fontSize: 10 }} angle={-35} textAnchor="end" interval={0} />
+                          <YAxis tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <Tooltip contentStyle={{ background: "#1a1f2e", border: "1px solid #2d3748", borderRadius: 8, fontSize: 12 }} labelStyle={{ color: "#e2e8f0" }} />
+                          <Bar dataKey="total" fill="#ff2442" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+
+                  {/* Sentiment Pie Chart */}
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>🎭 Sentiment Distribution</div>
+                    {dashSentiment.overall.length === 0 ? (
+                      <div style={{ textAlign: "center", color: "#334155", padding: "30px 0", fontSize: 12 }}>No sentiment data yet — run analysis first</div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                        <ResponsiveContainer width="60%" height={200}>
+                          <PieChart>
+                            <Pie data={dashSentiment.overall} dataKey="total" nameKey="sentiment" cx="50%" cy="50%" outerRadius={80} innerRadius={40}>
+                              {dashSentiment.overall.map((entry, i) => (
+                                <Cell key={i} fill={COLORS[entry.sentiment] || PIE_COLORS[i]} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ background: "#1a1f2e", border: "1px solid #2d3748", borderRadius: 8, fontSize: 12 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {dashSentiment.overall.map((s, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 10, height: 10, borderRadius: 2, background: COLORS[s.sentiment] || PIE_COLORS[i], flexShrink: 0 }} />
+                              <span style={{ fontSize: 11, color: "#94a3b8", textTransform: "capitalize" }}>{s.sentiment}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "#e2e8f0", marginLeft: "auto" }}>{s.total}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+                  {/* Timeline */}
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>📅 Scraping Timeline</div>
+                    {dashTimeline.length === 0 ? (
+                      <div style={{ textAlign: "center", color: "#334155", padding: "30px 0", fontSize: 12 }}>No data yet</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={180}>
+                        <LineChart data={dashTimeline} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e2330" />
+                          <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 9 }} />
+                          <YAxis tick={{ fill: "#64748b", fontSize: 10 }} />
+                          <Tooltip contentStyle={{ background: "#1a1f2e", border: "1px solid #2d3748", borderRadius: 8, fontSize: 12 }} />
+                          <Line type="monotone" dataKey="total" stroke="#ff2442" strokeWidth={2} dot={{ fill: "#ff2442", r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+
+                  {/* Top Authors */}
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>👤 Top Authors</div>
+                    {dashAuthors.length === 0 ? (
+                      <div style={{ textAlign: "center", color: "#334155", padding: "30px 0", fontSize: 12 }}>No data yet</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+                        {dashAuthors.slice(0, 8).map((a, i) => {
+                          const pct = Math.round((a.total / dashAuthors[0].total) * 100);
+                          return (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 10, color: "#475569", minWidth: 16, textAlign: "right" }}>{i + 1}</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                  <span style={{ fontSize: 11, color: "#e2e8f0" }}>{a.author}</span>
+                                  <span style={{ fontSize: 11, color: "#64748b" }}>{a.total}</span>
+                                </div>
+                                <div style={{ height: 4, background: "#1e2330", borderRadius: 2 }}>
+                                  <div style={{ height: "100%", width: `${pct}%`, background: "#ff2442", borderRadius: 2, transition: "width .5s" }} />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+        </div>
       </div>
     </div>
   );
