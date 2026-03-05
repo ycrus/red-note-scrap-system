@@ -3,6 +3,7 @@ from flask_cors import CORS
 from playwright.sync_api import sync_playwright
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+import requests as http_requests
 import time
 import random
 import csv
@@ -29,8 +30,12 @@ DB_URL = (
 
 engine = create_engine(DB_URL)
 
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
+HF_MODEL = "lxyuan/distilbert-base-multilingual-cased-sentiments-student"
+HF_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+
+
 def init_db():
-    """Create tables if not exists."""
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS scrape_sessions (
@@ -52,14 +57,22 @@ def init_db():
                 author TEXT,
                 likes TEXT,
                 post_date TEXT,
+                sentiment TEXT,
+                sentiment_score FLOAT,
                 scraped_at TIMESTAMP DEFAULT NOW()
             )
         """))
+        # Add sentiment columns if upgrading from old schema
+        try:
+            conn.execute(text("ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment TEXT"))
+            conn.execute(text("ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment_score FLOAT"))
+        except:
+            pass
         conn.commit()
     print("✅ Database ready")
 
+
 def save_session(keywords, max_scroll):
-    """Create a new scrape session and return its ID."""
     with engine.connect() as conn:
         result = conn.execute(text("""
             INSERT INTO scrape_sessions (keywords, max_scroll)
@@ -68,12 +81,12 @@ def save_session(keywords, max_scroll):
         conn.commit()
         return result.fetchone()[0]
 
+
 def save_result(session_id, row):
-    """Save a single result to DB, ignore duplicates."""
     with engine.connect() as conn:
         conn.execute(text("""
-            INSERT INTO results (session_id, keyword, title, link, author, likes, post_date)
-            VALUES (:sid, :kw, :title, :link, :author, :likes, :date)
+            INSERT INTO results (session_id, keyword, title, link, author, likes, post_date, sentiment, sentiment_score)
+            VALUES (:sid, :kw, :title, :link, :author, :likes, :date, :sentiment, :score)
             ON CONFLICT (link) DO NOTHING
         """), {
             "sid": session_id,
@@ -82,25 +95,96 @@ def save_result(session_id, row):
             "link": row["link"],
             "author": row["author"],
             "likes": row["likes"],
-            "date": row["date"]
+            "date": row["date"],
+            "sentiment": row.get("sentiment"),
+            "score": row.get("sentiment_score")
         })
         conn.commit()
 
+
 def finish_session(session_id, total):
-    """Mark session as finished."""
     with engine.connect() as conn:
         conn.execute(text("""
-            UPDATE scrape_sessions
-            SET finished_at = NOW(), total_results = :total
-            WHERE id = :sid
+            UPDATE scrape_sessions SET finished_at = NOW(), total_results = :total WHERE id = :sid
         """), {"total": total, "sid": session_id})
         conn.commit()
+
+
+# ── SENTIMENT ────────────────────────────────────────
+def analyze_sentiment(title):
+    """Call HuggingFace API to get sentiment of a title."""
+    if not HF_API_KEY:
+        print("❌ No HF API key!")
+        return None, None
+    try:
+        print(f"🔍 Analyzing: {title[:50]}")
+        resp = http_requests.post(
+            HF_URL,
+            headers={"Authorization": f"Bearer {HF_API_KEY}"},
+            json={"inputs": title},
+            timeout=15
+        )
+        print(f"   Status: {resp.status_code}")
+        print(f"   Response: {resp.text[:200]}")  # ← Lihat raw response
+
+        data = resp.json()
+
+        # Handle model loading (cold start)
+        if isinstance(data, dict) and "error" in data:
+            print(f"   HF Error: {data['error']}")
+            if "loading" in data.get("error", "").lower():
+                time.sleep(10)
+                resp = http_requests.post(
+                    HF_URL,
+                    headers={"Authorization": f"Bearer {HF_API_KEY}"},
+                    json={"inputs": title},
+                    timeout=20
+                )
+                data = resp.json()
+                print(f"   Retry response: {resp.text[:200]}")
+
+        if isinstance(data, list) and len(data) > 0:
+            scores = data[0] if isinstance(data[0], list) else data
+            best = max(scores, key=lambda x: x["score"])
+            print(f"   ✅ Result: {best['label']} ({best['score']:.2f})")
+            return best["label"].lower(), round(best["score"], 4)
+
+    except Exception as e:
+        print(f"❌ Sentiment exception: {e}")
+
+    return None, None
+
+
+def analyze_batch(result_ids):
+    """Analyze sentiment for a list of result IDs from DB."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT id, title FROM results
+            WHERE id = ANY(:ids) AND sentiment IS NULL
+        """), {"ids": result_ids}).fetchall()
+
+    updated = 0
+    for row_id, title in rows:
+        if not title:
+            continue
+        sentiment, score = analyze_sentiment(title)
+        if sentiment:
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    UPDATE results SET sentiment = :s, sentiment_score = :sc WHERE id = :id
+                """), {"s": sentiment, "sc": score, "id": row_id})
+                conn.commit()
+            updated += 1
+        time.sleep(0.3)  # Rate limit buffer
+
+    return updated
 
 
 # ── GLOBAL STATE ─────────────────────────────────────
 scrape_results = []
 log_queue = queue.Queue()
 is_scraping = False
+is_analyzing = False
 current_cookies = []
 
 
@@ -128,7 +212,7 @@ def parse_cookie_string(cookie_str):
 
 
 # ── SCRAPER ──────────────────────────────────────────
-def run_scraper(keywords, max_scroll, cookies):
+def run_scraper(keywords, max_scroll, cookies, auto_sentiment=False):
     global scrape_results, is_scraping
     scrape_results = []
     is_scraping = True
@@ -180,16 +264,22 @@ def run_scraper(keywords, max_scroll, cookies):
                             seen_links.add(link)
 
                             if title and link:
+                                sentiment, score = None, None
+                                if auto_sentiment and HF_API_KEY:
+                                    sentiment, score = analyze_sentiment(title)
+
                                 row = {
                                     "keyword": keyword,
                                     "title": title.strip(),
                                     "link": f"https://www.xiaohongshu.com{link}",
                                     "author": author.strip(),
                                     "likes": likes.strip(),
-                                    "date": date.strip()
+                                    "date": date.strip(),
+                                    "sentiment": sentiment,
+                                    "sentiment_score": score
                                 }
                                 scrape_results.append(row)
-                                save_result(session_id, row)  # ← Save to PostgreSQL
+                                save_result(session_id, row)
                                 push_result(row)
                                 count += 1
                         except:
@@ -238,16 +328,65 @@ def start_scrape():
     body = request.json
     keywords = [k.strip() for k in body.get("keywords", []) if k.strip()]
     max_scroll = int(body.get("max_scroll", 5))
+    auto_sentiment = bool(body.get("auto_sentiment", False))
+
     if not keywords:
         return jsonify({"error": "No keywords provided"}), 400
 
     while not log_queue.empty():
         log_queue.get()
 
-    thread = threading.Thread(target=run_scraper, args=(keywords, max_scroll, list(current_cookies)))
+    thread = threading.Thread(target=run_scraper, args=(keywords, max_scroll, list(current_cookies), auto_sentiment))
     thread.daemon = True
     thread.start()
     return jsonify({"status": "started", "keywords": keywords})
+
+
+@app.route("/api/sentiment/analyze", methods=["POST"])
+def manual_sentiment():
+    """Manually trigger sentiment analysis on unanalyzed results."""
+    global is_analyzing
+    if is_analyzing:
+        return jsonify({"error": "Analysis already running"}), 400
+    if not HF_API_KEY:
+        return jsonify({"error": "HUGGINGFACE_API_KEY not set in .env"}), 400
+
+    body = request.json or {}
+    limit = int(body.get("limit", 50))
+
+    def run_analysis():
+        global is_analyzing
+        is_analyzing = True
+        try:
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT id FROM results WHERE sentiment IS NULL LIMIT :lim
+                """), {"lim": limit}).fetchall()
+            ids = [r[0] for r in rows]
+            if not ids:
+                return
+            updated = analyze_batch(ids)
+            print(f"✅ Sentiment analyzed: {updated}/{len(ids)}")
+        finally:
+            is_analyzing = False
+
+    thread = threading.Thread(target=run_analysis)
+    thread.daemon = True
+    thread.start()
+    return jsonify({"status": "started", "message": f"Analyzing up to {limit} results"})
+
+
+@app.route("/api/sentiment/status")
+def sentiment_status():
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT COUNT(*) FROM results")).fetchone()[0]
+        analyzed = conn.execute(text("SELECT COUNT(*) FROM results WHERE sentiment IS NOT NULL")).fetchone()[0]
+    return jsonify({
+        "is_analyzing": is_analyzing,
+        "total": total,
+        "analyzed": analyzed,
+        "pending": total - analyzed
+    })
 
 
 @app.route("/api/stream")
@@ -272,7 +411,6 @@ def get_results():
 
 @app.route("/api/history")
 def get_history():
-    """Return all past scrape sessions."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT id, keywords, max_scroll, total_results, started_at, finished_at
@@ -288,37 +426,53 @@ def get_history():
 
 @app.route("/api/history/<int:session_id>")
 def get_session_results(session_id):
-    """Return all results for a specific session."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT keyword, title, link, author, likes, post_date, scraped_at
+            SELECT keyword, title, link, author, likes, post_date, sentiment, sentiment_score, scraped_at
             FROM results WHERE session_id = :sid ORDER BY scraped_at
         """), {"sid": session_id}).fetchall()
     return jsonify([{
-        "keyword": r[0], "title": r[1], "link": r[2],
-        "author": r[3], "likes": r[4], "date": r[5],
-        "scraped_at": r[6].isoformat() if r[6] else None
+        "keyword": r[0], "title": r[1], "link": r[2], "author": r[3],
+        "likes": r[4], "date": r[5], "sentiment": r[6],
+        "sentiment_score": r[7],
+        "scraped_at": r[8].isoformat() if r[8] else None
     } for r in rows])
 
 
 @app.route("/api/analytics/keywords")
 def analytics_keywords():
-    """Keyword volume stats from DB."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT keyword, COUNT(*) as total FROM results GROUP BY keyword ORDER BY total DESC")).fetchall()
+    return jsonify([{"keyword": r[0], "total": r[1]} for r in rows])
+
+
+@app.route("/api/analytics/sentiment")
+def analytics_sentiment():
+    """Sentiment distribution for dashboard."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT keyword, COUNT(*) as total
-            FROM results GROUP BY keyword ORDER BY total DESC
+            SELECT sentiment, COUNT(*) as total
+            FROM results WHERE sentiment IS NOT NULL
+            GROUP BY sentiment ORDER BY total DESC
         """)).fetchall()
-    return jsonify([{"keyword": r[0], "total": r[1]} for r in rows])
+        # Per keyword breakdown
+        kw_rows = conn.execute(text("""
+            SELECT keyword, sentiment, COUNT(*) as total
+            FROM results WHERE sentiment IS NOT NULL
+            GROUP BY keyword, sentiment ORDER BY keyword, total DESC
+        """)).fetchall()
+    return jsonify({
+        "overall": [{"sentiment": r[0], "total": r[1]} for r in rows],
+        "by_keyword": [{"keyword": r[0], "sentiment": r[1], "total": r[2]} for r in kw_rows]
+    })
 
 
 @app.route("/api/analytics/top-authors")
 def analytics_top_authors():
-    """Top authors by post count."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT author, COUNT(*) as total
-            FROM results WHERE author IS NOT NULL AND author != ''
+            SELECT author, COUNT(*) as total FROM results
+            WHERE author IS NOT NULL AND author != ''
             GROUP BY author ORDER BY total DESC LIMIT 20
         """)).fetchall()
     return jsonify([{"author": r[0], "total": r[1]} for r in rows])
@@ -326,7 +480,6 @@ def analytics_top_authors():
 
 @app.route("/api/analytics/timeline")
 def analytics_timeline():
-    """Posts per day scraped."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT DATE(scraped_at) as day, COUNT(*) as total
@@ -337,20 +490,18 @@ def analytics_timeline():
 
 @app.route("/api/download/csv")
 def download_csv():
-    """Download all results from DB as CSV."""
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT keyword, title, link, author, likes, post_date, scraped_at
+            SELECT keyword, title, link, author, likes, post_date, sentiment, sentiment_score, scraped_at
             FROM results ORDER BY scraped_at DESC
         """)).fetchall()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["keyword", "title", "link", "author", "likes", "date", "scraped_at"])
+    writer.writerow(["keyword", "title", "link", "author", "likes", "date", "sentiment", "sentiment_score", "scraped_at"])
     for r in rows:
         writer.writerow(r)
     output.seek(0)
-
     return Response(output.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=rednote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"})
 
@@ -359,8 +510,10 @@ def download_csv():
 def status():
     return jsonify({
         "is_scraping": is_scraping,
+        "is_analyzing": is_analyzing,
         "total_results": len(scrape_results),
-        "cookies_loaded": len(current_cookies)
+        "cookies_loaded": len(current_cookies),
+        "hf_configured": bool(HF_API_KEY)
     })
 
 
