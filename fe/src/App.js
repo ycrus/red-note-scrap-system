@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const API = "http://localhost:5001";
 
@@ -63,6 +63,12 @@ export default function App() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionResults, setSessionResults] = useState([]);
 
+  // Detail post state
+  const [detailPost, setDetailPost] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailStatus, setDetailStatus] = useState({ total: 0, scraped: 0, pending: 0 });
+  const [detailLimit, setDetailLimit] = useState(20);
+
   // Dashboard state
   const [dashKeywords, setDashKeywords] = useState([]);
   const [dashSentiment, setDashSentiment] = useState({ overall: [], by_keyword: [] });
@@ -87,6 +93,7 @@ export default function App() {
 
     fetchSentimentStatus();
     fetchHistory();
+    fetchDetailStatus();
   }, []);
 
   const fetchHistory = () => {
@@ -98,6 +105,42 @@ export default function App() {
     fetch(`${API}/api/analytics/sentiment`).then(r => r.json()).then(d => setDashSentiment(d)).catch(() => {});
     fetch(`${API}/api/analytics/timeline`).then(r => r.json()).then(d => setDashTimeline([...d].reverse())).catch(() => {});
     fetch(`${API}/api/analytics/top-authors`).then(r => r.json()).then(d => setDashAuthors(d)).catch(() => {});
+  };
+
+  const fetchDetailStatus = () => {
+    fetch(`${API}/api/scrape/detail/status`).then(r => r.json()).then(d => setDetailStatus(d)).catch(() => {});
+  };
+
+  const openPostDetail = async (resultId) => {
+    setDetailLoading(true);
+    setDetailPost(null);
+    try {
+      const res = await fetch(`${API}/api/results/${resultId}/detail`);
+      const data = await res.json();
+      setDetailPost(data);
+    } catch {}
+    setDetailLoading(false);
+  };
+
+  const startDetailScrape = async (sessionId = null) => {
+    if (cookieStatus !== "ok") return alert("Please set cookies first!");
+    try {
+      const body = { limit: detailLimit };
+      if (sessionId) body.session_id = sessionId;
+      const res = await fetch(`${API}/api/scrape/detail`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data.status === "started") {
+        setTab("logs");
+      } else {
+        alert(data.error || "Failed to start");
+      }
+    } catch (err) {
+      alert("Connection error: " + err.message);
+    }
   };
 
   const fetchSessionResults = async (sessionId) => {
@@ -372,7 +415,35 @@ export default function App() {
             )}
           </div>
 
-          {/* Stats */}
+          {/* Detail Scrape Panel */}
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>🔍 Scrape Post Detail</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+              {[
+                { label: "Scraped", value: detailStatus.scraped, color: "#16a34a" },
+                { label: "Pending", value: detailStatus.pending, color: "#f59e0b" },
+              ].map(s => (
+                <div key={s.label} style={{ textAlign: "center", background: "#0f1117", borderRadius: 8, padding: "8px 4px" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: s.color, fontFamily: "Syne, sans-serif" }}>{s.value}</div>
+                  <div style={{ fontSize: 10, color: "#e2e8f0" }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "#e2e8f0" }}>Limit:</span>
+              <input type="number" value={detailLimit} onChange={e => setDetailLimit(Number(e.target.value))}
+                min={1} max={100} style={{ width: 60, padding: "4px 8px" }} />
+              <span style={{ fontSize: 10, color: "#e2e8f0" }}>posts</span>
+            </div>
+            <button className="btn" onClick={() => startDetailScrape()}
+              disabled={scraping || detailStatus.pending === 0}
+              style={{ width: "100%", background: "#0ea5e9", color: "#fff", padding: "8px 16px", fontSize: 12 }}>
+              {scraping ? "⏳ Running..." : "🔍 Fetch Details"}
+            </button>
+            <div style={{ fontSize: 10, color: "#475569", marginTop: 6 }}>
+              Fetches full content, images & tags per post
+            </div>
+          </div>
           <div className="card" style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {[
               { label: "Keywords", value: keywords.split("\n").filter(k => k.trim()).length },
@@ -460,7 +531,12 @@ export default function App() {
                         <td style={{ padding: "9px 12px", color: "#64748b", textAlign: "right" }}>{r.likes}</td>
                         <td style={{ padding: "9px 12px", color: "#475569", whiteSpace: "nowrap" }}>{r.date}</td>
                         <td style={{ padding: "9px 12px" }}><SentimentBadge sentiment={r.sentiment} score={r.sentiment_score} /></td>
-                        <td style={{ padding: "9px 12px" }}><a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a></td>
+                        <td style={{ padding: "9px 12px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a>
+                            {r.id && <button className="btn btn-ghost" style={{ padding: "2px 8px", fontSize: 10 }} onClick={() => openPostDetail(r.id)}>Detail</button>}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -537,7 +613,12 @@ export default function App() {
                             <td style={{ padding: "8px 12px", color: "#64748b", textAlign: "right" }}>{r.likes}</td>
                             <td style={{ padding: "8px 12px", color: "#475569", whiteSpace: "nowrap" }}>{r.date}</td>
                             <td style={{ padding: "8px 12px" }}><SentimentBadge sentiment={r.sentiment} score={r.sentiment_score} /></td>
-                            <td style={{ padding: "8px 12px" }}><a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a></td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11 }}>Open ↗</a>
+                                {r.id && <button className="btn btn-ghost" style={{ padding: "2px 8px", fontSize: 10 }} onClick={() => openPostDetail(r.id)}>Detail</button>}
+                              </div>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -681,6 +762,97 @@ export default function App() {
 
         </div>
       </div>
+      {/* Post Detail Modal */}
+      {(detailPost || detailLoading) && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+          onClick={() => { setDetailPost(null); }}>
+          <div style={{ background: "#1a1f2e", border: "1px solid #2d3748", borderRadius: 16, width: "100%", maxWidth: 680, maxHeight: "85vh", overflowY: "auto", padding: 28 }}
+            onClick={e => e.stopPropagation()}>
+
+            {detailLoading ? (
+              <div style={{ textAlign: "center", padding: 60, color: "#475569" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                <div>Loading post detail...</div>
+              </div>
+            ) : detailPost && (
+              <>
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+                  <div style={{ flex: 1, paddingRight: 16 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", lineHeight: 1.5, marginBottom: 8 }}>{detailPost.title}</div>
+                    <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#64748b" }}>
+                      <span>👤 {detailPost.author}</span>
+                      <span>❤️ {detailPost.likes}</span>
+                      {detailPost.comments_count && <span>💬 {detailPost.comments_count}</span>}
+                      <span>📅 {detailPost.date}</span>
+                    </div>
+                  </div>
+                  <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }} onClick={() => setDetailPost(null)}>✕</button>
+                </div>
+
+                {/* Sentiment */}
+                {detailPost.sentiment && (
+                  <div style={{ marginBottom: 16 }}>
+                    <SentimentBadge sentiment={detailPost.sentiment} score={detailPost.sentiment_score} />
+                  </div>
+                )}
+
+                {/* Images */}
+                {detailPost.images && detailPost.images.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Images ({detailPost.images.length})</div>
+                    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                      {detailPost.images.map((src, i) => (
+                        <img key={i} src={src} alt="" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1px solid #2d3748" }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Content */}
+                {detailPost.content ? (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Content</div>
+                    <div style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.7, background: "#0f1117", padding: 14, borderRadius: 8, border: "1px solid #2d3748", whiteSpace: "pre-wrap" }}>
+                      {detailPost.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 20, padding: 16, background: "#0f1117", borderRadius: 8, border: "1px solid #2d3748", textAlign: "center" }}>
+                    <div style={{ fontSize: 12, color: "#334155" }}>
+                      {detailPost.detail_scraped ? "No content found for this post" : "Detail not scraped yet — click Fetch Details in sidebar"}
+                    </div>
+                    {!detailPost.detail_scraped && (
+                      <button className="btn" onClick={() => { setDetailPost(null); startDetailScrape(); }}
+                        style={{ marginTop: 10, background: "#0ea5e9", color: "#fff", padding: "6px 16px", fontSize: 11 }}>
+                        🔍 Fetch Now
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Tags */}
+                {detailPost.tags && detailPost.tags.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tags</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {detailPost.tags.map((tag, i) => (
+                        <span key={i} style={{ background: "#0f1117", border: "1px solid #2d3748", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#ff2442" }}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Link */}
+                <a href={detailPost.link} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#0ea5e9", marginTop: 4 }}>
+                  Open original post ↗
+                </a>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

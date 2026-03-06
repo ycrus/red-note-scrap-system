@@ -32,7 +32,7 @@ engine = create_engine(DB_URL)
 
 HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY", "")
 HF_MODEL = "lxyuan/distilbert-base-multilingual-cased-sentiments-student"
-HF_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
+HF_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 
 def init_db():
@@ -62,12 +62,20 @@ def init_db():
                 scraped_at TIMESTAMP DEFAULT NOW()
             )
         """))
-        # Add sentiment columns if upgrading from old schema
-        try:
-            conn.execute(text("ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment TEXT"))
-            conn.execute(text("ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment_score FLOAT"))
-        except:
-            pass
+        # Add columns if upgrading from old schema
+        for col in [
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment TEXT",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS sentiment_score FLOAT",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS content TEXT",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS comments_count TEXT",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS images TEXT[]",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS tags TEXT[]",
+            "ALTER TABLE results ADD COLUMN IF NOT EXISTS detail_scraped BOOLEAN DEFAULT FALSE",
+        ]:
+            try:
+                conn.execute(text(col))
+            except:
+                pass
         conn.commit()
     print("✅ Database ready")
 
@@ -84,10 +92,11 @@ def save_session(keywords, max_scroll):
 
 def save_result(session_id, row):
     with engine.connect() as conn:
-        conn.execute(text("""
+        result = conn.execute(text("""
             INSERT INTO results (session_id, keyword, title, link, author, likes, post_date, sentiment, sentiment_score)
             VALUES (:sid, :kw, :title, :link, :author, :likes, :date, :sentiment, :score)
-            ON CONFLICT (link) DO NOTHING
+            ON CONFLICT (link) DO UPDATE SET title = EXCLUDED.title
+            RETURNING id
         """), {
             "sid": session_id,
             "kw": row["keyword"],
@@ -100,6 +109,7 @@ def save_result(session_id, row):
             "score": row.get("sentiment_score")
         })
         conn.commit()
+        return result.fetchone()[0]
 
 
 def finish_session(session_id, total):
@@ -124,12 +134,9 @@ def analyze_sentiment(title):
             json={"inputs": title},
             timeout=15
         )
-        print(f"   Status: {resp.status_code}")
-        print(f"   Response: {resp.text[:200]}")  # ← Lihat raw response
-
+        print(f"   Status: {resp.status_code} | Response: {resp.text[:300]}")
         data = resp.json()
 
-        # Handle model loading (cold start)
         if isinstance(data, dict) and "error" in data:
             print(f"   HF Error: {data['error']}")
             if "loading" in data.get("error", "").lower():
@@ -141,13 +148,15 @@ def analyze_sentiment(title):
                     timeout=20
                 )
                 data = resp.json()
-                print(f"   Retry response: {resp.text[:200]}")
+                print(f"   Retry: {resp.text[:300]}")
 
         if isinstance(data, list) and len(data) > 0:
             scores = data[0] if isinstance(data[0], list) else data
             best = max(scores, key=lambda x: x["score"])
-            print(f"   ✅ Result: {best['label']} ({best['score']:.2f})")
+            print(f"   ✅ {best['label']} ({best['score']:.2f})")
             return best["label"].lower(), round(best["score"], 4)
+        else:
+            print(f"   ⚠️ Unexpected format: {data}")
 
     except Exception as e:
         print(f"❌ Sentiment exception: {e}")
@@ -180,7 +189,132 @@ def analyze_batch(result_ids):
     return updated
 
 
-# ── GLOBAL STATE ─────────────────────────────────────
+def scrape_post_detail(page, url):
+    """Visit a post page and extract full content, comments count, images, tags."""
+    try:
+        page.goto(url, timeout=60000)
+        page.wait_for_load_state("domcontentloaded")
+        time.sleep(random.uniform(3, 5))
+
+        if "login" in page.url:
+            return None
+
+        detail = {}
+
+        # Full content/description
+        try:
+            for selector in ["#detail-desc span", ".desc span", ".content span", "[class*='desc'] span", "article span"]:
+                try:
+                    el = page.locator(selector).first
+                    text = el.inner_text(timeout=3000).strip()
+                    if text and len(text) > 5:
+                        detail["content"] = text
+                        break
+                except:
+                    continue
+            if "content" not in detail:
+                detail["content"] = None
+        except:
+            detail["content"] = None
+
+        # Comments count
+        try:
+            for selector in [".count-text", ".comment-count", "[class*='comment'] span", "[class*='chat'] span"]:
+                try:
+                    el = page.locator(selector).first
+                    text = el.inner_text(timeout=2000).strip()
+                    if text:
+                        detail["comments_count"] = text
+                        break
+                except:
+                    continue
+            if "comments_count" not in detail:
+                detail["comments_count"] = None
+        except:
+            detail["comments_count"] = None
+
+        # Images
+        try:
+            imgs = page.locator(".swiper-slide img, .note-image img, [class*='slide'] img").all()
+            detail["images"] = [img.get_attribute("src") for img in imgs[:9] if img.get_attribute("src")]
+        except:
+            detail["images"] = []
+
+        # Tags / hashtags
+        try:
+            tag_els = page.locator("a[href*='search'] span, .tag, [class*='tag']").all()
+            tags = []
+            for t in tag_els[:10]:
+                try:
+                    txt = t.inner_text(timeout=1000).strip()
+                    if txt and (txt.startswith("#") or len(txt) < 30):
+                        tags.append(txt)
+                except:
+                    continue
+            detail["tags"] = list(set(tags))
+        except:
+            detail["tags"] = []
+
+        return detail
+
+    except Exception as e:
+        print(f"Detail scrape error: {e}")
+        return None
+
+
+def run_detail_scraper(result_ids, cookies):
+    """Scrape full details for a list of result IDs."""
+    global is_scraping
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+            )
+            context.add_cookies(cookies)
+            page = context.new_page()
+
+            with engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT id, link FROM results
+                    WHERE id = ANY(:ids) AND detail_scraped IS NOT TRUE
+                """), {"ids": result_ids}).fetchall()
+
+            push_log(f"🔍 Fetching details for {len(rows)} posts...")
+
+            for i, (row_id, link) in enumerate(rows):
+                push_log(f"   [{i+1}/{len(rows)}] {link[:60]}...")
+                detail = scrape_post_detail(page, link)
+
+                if detail:
+                    with engine.connect() as conn:
+                        conn.execute(text("""
+                            UPDATE results SET
+                                content = :content,
+                                comments_count = :comments,
+                                images = :images,
+                                tags = :tags,
+                                detail_scraped = TRUE
+                            WHERE id = :id
+                        """), {
+                            "content": detail.get("content"),
+                            "comments": detail.get("comments_count"),
+                            "images": detail.get("images") or [],
+                            "tags": detail.get("tags") or [],
+                            "id": row_id
+                        })
+                        conn.commit()
+
+                time.sleep(random.uniform(3, 6))
+
+            browser.close()
+            push_log(f"✅ Detail scraping done: {len(rows)} posts updated")
+            push_done(len(rows))
+
+    except Exception as e:
+        push_error(f"❌ Detail scraper error: {str(e)}")
+        push_done(0)
 scrape_results = []
 log_queue = queue.Queue()
 is_scraping = False
@@ -278,8 +412,9 @@ def run_scraper(keywords, max_scroll, cookies, auto_sentiment=False):
                                     "sentiment": sentiment,
                                     "sentiment_score": score
                                 }
+                                db_id = save_result(session_id, row)
+                                row["id"] = db_id
                                 scrape_results.append(row)
-                                save_result(session_id, row)
                                 push_result(row)
                                 count += 1
                         except:
@@ -340,6 +475,83 @@ def start_scrape():
     thread.daemon = True
     thread.start()
     return jsonify({"status": "started", "keywords": keywords})
+
+
+@app.route("/api/scrape/detail", methods=["POST"])
+def start_detail_scrape():
+    """Trigger detail scraping for selected or all unscraped results."""
+    global is_scraping, log_queue
+
+    if is_scraping:
+        return jsonify({"error": "Scraping already in progress"}), 400
+    if not current_cookies:
+        return jsonify({"error": "No cookies set!"}), 400
+
+    body = request.json or {}
+    limit = int(body.get("limit", 20))
+    session_id = body.get("session_id")  # Optional: only for specific session
+
+    with engine.connect() as conn:
+        if session_id:
+            rows = conn.execute(text("""
+                SELECT id FROM results
+                WHERE session_id = :sid AND detail_scraped IS NOT TRUE
+                LIMIT :lim
+            """), {"sid": session_id, "lim": limit}).fetchall()
+        else:
+            rows = conn.execute(text("""
+                SELECT id FROM results
+                WHERE detail_scraped IS NOT TRUE
+                LIMIT :lim
+            """), {"lim": limit}).fetchall()
+
+    ids = [r[0] for r in rows]
+    if not ids:
+        return jsonify({"error": "No posts to scrape details for"}), 400
+
+    while not log_queue.empty():
+        log_queue.get()
+
+    is_scraping = True
+    thread = threading.Thread(target=run_detail_scraper, args=(ids, list(current_cookies)))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"status": "started", "count": len(ids)})
+
+
+@app.route("/api/results/<int:result_id>/detail")
+def get_result_detail(result_id):
+    """Get full detail of a single result."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT id, keyword, title, link, author, likes, post_date,
+                   sentiment, sentiment_score, content, comments_count,
+                   images, tags, detail_scraped, scraped_at
+            FROM results WHERE id = :id
+        """), {"id": result_id}).fetchone()
+
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+
+    return jsonify({
+        "id": row[0], "keyword": row[1], "title": row[2], "link": row[3],
+        "author": row[4], "likes": row[5], "date": row[6],
+        "sentiment": row[7], "sentiment_score": row[8],
+        "content": row[9], "comments_count": row[10],
+        "images": row[11] or [], "tags": row[12] or [],
+        "detail_scraped": row[13],
+        "scraped_at": row[14].isoformat() if row[14] else None
+    })
+
+
+@app.route("/api/scrape/detail/status")
+def detail_scrape_status():
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT COUNT(*) FROM results")).fetchone()[0]
+        done = conn.execute(text("SELECT COUNT(*) FROM results WHERE detail_scraped = TRUE")).fetchone()[0]
+    return jsonify({"total": total, "scraped": done, "pending": total - done, "is_scraping": is_scraping})
+
 
 
 @app.route("/api/sentiment/analyze", methods=["POST"])
@@ -428,14 +640,14 @@ def get_history():
 def get_session_results(session_id):
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT keyword, title, link, author, likes, post_date, sentiment, sentiment_score, scraped_at
+            SELECT id, keyword, title, link, author, likes, post_date, sentiment, sentiment_score, scraped_at
             FROM results WHERE session_id = :sid ORDER BY scraped_at
         """), {"sid": session_id}).fetchall()
     return jsonify([{
-        "keyword": r[0], "title": r[1], "link": r[2], "author": r[3],
-        "likes": r[4], "date": r[5], "sentiment": r[6],
-        "sentiment_score": r[7],
-        "scraped_at": r[8].isoformat() if r[8] else None
+        "id": r[0], "keyword": r[1], "title": r[2], "link": r[3], "author": r[4],
+        "likes": r[5], "date": r[6], "sentiment": r[7],
+        "sentiment_score": r[8],
+        "scraped_at": r[9].isoformat() if r[9] else None
     } for r in rows])
 
 
