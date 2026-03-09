@@ -1,0 +1,7 @@
+from .scrape import scrape_bp
+from .sentiment import sentiment_bp
+from .history import history_bp
+from .analytics import analytics_bp
+from .bot import bot_bp
+
+__all__ = ["scrape_bp", "sentiment_bp", "history_bp", "analytics_bp", "bot_bp"]
