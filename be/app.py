@@ -6,7 +6,7 @@ import os
 load_dotenv()
 
 from database import init_db
-from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp
+from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +16,7 @@ app.register_blueprint(sentiment_bp)
 app.register_blueprint(history_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(bot_bp)
+app.register_blueprint(trending_bp)
 
 
 if __name__ == "__main__":

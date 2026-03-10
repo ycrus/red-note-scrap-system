@@ -382,3 +382,118 @@ def db_analytics_keywords():
             "SELECT keyword, COUNT(*) as total FROM results GROUP BY keyword ORDER BY total DESC"
         )).fetchall()
     return [{"keyword": r[0], "total": r[1]} for r in rows]
+
+
+# ── TRENDING ─────────────────────────────────────────
+
+def db_save_trending(items):
+    """Simpan hasil trending scrape. items = list of dicts."""
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS trending (
+                id SERIAL PRIMARY KEY,
+                hashtag TEXT NOT NULL,
+                post_count INTEGER DEFAULT 0,
+                sample_titles TEXT[],
+                source TEXT DEFAULT 'explore',
+                scraped_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        # Hapus data lama (keep hanya 7 hari)
+        conn.execute(text("DELETE FROM trending WHERE scraped_at < NOW() - INTERVAL '7 days'"))
+        for item in items:
+            conn.execute(text("""
+                INSERT INTO trending (hashtag, post_count, sample_titles, source)
+                VALUES (:hashtag, :post_count, :sample_titles, :source)
+            """), {
+                "hashtag": item.get("hashtag", ""),
+                "post_count": item.get("post_count", 0),
+                "sample_titles": item.get("sample_titles", []),
+                "source": item.get("source", "explore"),
+            })
+        conn.commit()
+
+
+def db_get_trending(limit=30):
+    """Ambil trending terbaru."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT hashtag, SUM(post_count) as total, MAX(scraped_at) as last_seen
+            FROM trending
+            WHERE scraped_at > NOW() - INTERVAL '24 hours'
+            GROUP BY hashtag
+            ORDER BY total DESC
+            LIMIT :limit
+        """), {"limit": limit}).fetchall()
+    return [{"hashtag": r[0], "count": r[1], "last_seen": str(r[2])} for r in rows]
+
+
+def db_trending_last_scraped():
+    """Kapan terakhir kali trending di-scrape."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT MAX(scraped_at) FROM trending
+        """)).fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+def db_hashtags_from_results(limit=50):
+    """Extract & hitung hashtag dari judul + tags hasil scraping di DB."""
+    import re
+    with engine.connect() as conn:
+        # Dari judul
+        title_rows = conn.execute(text("""
+            SELECT title FROM results WHERE title IS NOT NULL
+        """)).fetchall()
+        # Dari tags (detail scrape)
+        tag_rows = conn.execute(text("""
+            SELECT unnest(tags) as tag FROM results
+            WHERE tags IS NOT NULL AND array_length(tags, 1) > 0
+        """)).fetchall()
+
+    counts = {}
+    # Extract #hashtag dari judul
+    for (title,) in title_rows:
+        if title:
+            tags = re.findall(r'#(\S+)', title)
+            for t in tags:
+                t = t.strip('.,!?。，').lower()
+                if t and len(t) > 1:
+                    counts[t] = counts.get(t, 0) + 1
+
+    # Dari field tags
+    for (tag,) in tag_rows:
+        if tag:
+            t = tag.lstrip('#').strip().lower()
+            if t and len(t) > 1:
+                counts[t] = counts.get(t, 0) + 1
+
+    sorted_tags = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+    return [{"hashtag": f"#{k}", "count": v, "source": "db"} for k, v in sorted_tags]
+
+
+def db_topics_from_results(limit=30):
+    """Cluster kata-kata paling sering muncul di judul sebagai proxy topic."""
+    import re
+    from collections import Counter
+    STOP_WORDS = {
+        '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都',
+        '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你',
+        'the', 'a', 'an', 'is', 'are', 'was', 'to', 'of', 'in', 'for',
+        'dan', 'di', 'yang', 'ke', 'dengan', 'ini', 'itu', 'ada', 'untuk',
+    }
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT title FROM results WHERE title IS NOT NULL
+        """)).fetchall()
+
+    word_count = Counter()
+    for (title,) in rows:
+        if title:
+            words = re.findall(r'[\w\u4e00-\u9fff]{2,}', title.lower())
+            for w in words:
+                if w not in STOP_WORDS and not w.isdigit():
+                    word_count[w] += 1
+
+    return [{"topic": w, "count": c} for w, c in word_count.most_common(limit)]
+

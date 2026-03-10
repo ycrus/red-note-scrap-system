@@ -5,6 +5,7 @@ import { LogsTab } from "./components/tabs/LogsTab";
 import { ResultsTab } from "./components/tabs/ResultsTab";
 import { HistoryTab } from "./components/tabs/HistoryTab";
 import { DashboardTab } from "./components/tabs/DashboardTab";
+import { TrendingTab } from "./components/tabs/TrendingTab";
 import { PostDetailModal } from "./components/ui/PostDetailModal";
 import {
   getCookies, getStatus, startScrape, createEventSource,
@@ -124,6 +125,15 @@ export default function App() {
     });
   };
 
+  const handleTrendingScrapeStarted = () => {
+    setTab("logs");
+    setLogs([]);
+    subscribeToStream((item) => {
+      setLogs(prev => [...prev, { type: "done", message: `Trending scrape done! ${item.total} items found.`, time: new Date().toLocaleTimeString(), id: Date.now() }]);
+      setScraping(false);
+    });
+  };
+
   const handleDetailScrapeStarted = () => {
     setTab("logs");
     setLogs([]);
@@ -149,6 +159,7 @@ export default function App() {
     results:   `📊 Results (${results.length})`,
     history:   `🕘 History (${history.length})`,
     dashboard: `📈 Dashboard`,
+    trending: `🔥 Trending`,
   }[t]);
 
   return (
@@ -216,7 +227,7 @@ export default function App() {
           {/* Tab bar */}
           <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748" }}>
             <div style={{ display: "flex", gap: 5 }}>
-              {["logs", "results", "history", "dashboard"].map(t => (
+              {["logs", "results", "history", "dashboard", "trending"].map(t => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`}
                   onClick={() => { setTab(t); if (t === "history") getHistory().then(setHistory).catch(() => {}); if (t === "dashboard") fetchDashboard(); }}>
                   {tabLabel(t)}
@@ -228,6 +239,12 @@ export default function App() {
           {tab === "logs"      && <LogsTab logs={logs} />}
           {tab === "results"   && <ResultsTab results={results} onOpenDetail={handleOpenDetail} />}
           {tab === "history"   && <HistoryTab history={history} onOpenDetail={handleOpenDetail} />}
+          {tab === "trending" && (
+            <TrendingTab
+              scraping={scraping}
+              onScrapeStarted={() => { setScraping(true); handleTrendingScrapeStarted(); }}
+            />
+          )}
           {tab === "dashboard" && (
             <DashboardTab
               keywords={dashKeywords}
