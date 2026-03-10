@@ -3,6 +3,29 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, L
 const COLORS = { positive: "#16a34a", negative: "#ef4444", neutral: "#64748b" };
 const PIE_COLORS = ["#16a34a", "#ef4444", "#64748b", "#f59e0b"];
 
+const BOT_CONFIG = {
+  high:   { label: "BOT",        bg: "#7f1d1d", color: "#fca5a5", border: "#ef4444" },
+  medium: { label: "SUSPICIOUS", bg: "#451a03", color: "#fcd34d", border: "#f59e0b" },
+  low:    { label: "LOW RISK",   bg: "#1e1b4b", color: "#a5b4fc", border: "#6366f1" },
+  clean:  { label: "CLEAN",      bg: "#052e16", color: "#86efac", border: "#16a34a" },
+};
+
+const BotBadge = ({ label, score }) => {
+  if (!label) return <span style={{ fontSize: 10, color: "#475569" }}>—</span>;
+  const cfg = BOT_CONFIG[label] || BOT_CONFIG.clean;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: cfg.bg, color: cfg.color,
+      border: `1px solid ${cfg.border}`,
+      borderRadius: 4, padding: "1px 6px", fontSize: 9, fontWeight: 700,
+      letterSpacing: 0.5, whiteSpace: "nowrap"
+    }}>
+      {cfg.label}{score != null ? ` ${score}` : ""}
+    </span>
+  );
+};
+
 const StatCard = ({ label, value, color }) => (
   <div className="card" style={{ padding: 16, textAlign: "center" }}>
     <div style={{ fontSize: 28, fontWeight: 800, color: color || "#ff2442", fontFamily: "Syne, sans-serif" }}>{value}</div>
@@ -101,18 +124,21 @@ export const DashboardTab = ({ keywords, sentiment, timeline, authors, onRefresh
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>👤 Top Authors</div>
           {authors.length === 0 ? <EmptyChart /> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
               {authors.slice(0, 8).map((a, i) => {
                 const pct = Math.round((a.total / authors[0].total) * 100);
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 10, color: "#e2e8f0", minWidth: 16, textAlign: "right" }}>{i + 1}</span>
+                    <span style={{ fontSize: 10, color: "#64748b", minWidth: 16, textAlign: "right" }}>{i + 1}</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, color: "#e2e8f0" }}>{a.author}</span>
-                        <span style={{ fontSize: 11, color: "#e2e8f0" }}>{a.total}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: "#e2e8f0", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.author}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <BotBadge label={a.bot_label} score={a.bot_score} />
+                          <span style={{ fontSize: 11, color: "#94a3b8", minWidth: 20, textAlign: "right" }}>{a.total}</span>
+                        </div>
                       </div>
-                      <div style={{ height: 4, background: "#1e2330", borderRadius: 2 }}>
+                      <div style={{ height: 3, background: "#1e2330", borderRadius: 2 }}>
                         <div style={{ height: "100%", width: `${pct}%`, background: "#ff2442", borderRadius: 2, transition: "width .5s" }} />
                       </div>
                     </div>

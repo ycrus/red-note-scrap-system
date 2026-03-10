@@ -60,6 +60,12 @@ def init_db():
                 conn.execute(text(col))
             except:
                 pass
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """))
         conn.commit()
     print("✅ Database ready")
 
@@ -323,11 +329,16 @@ def db_analytics_sentiment():
 def db_analytics_top_authors():
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT author, COUNT(*) as total FROM results
+            SELECT
+                author,
+                COUNT(*) as total,
+                MAX(bot_score) as bot_score,
+                MAX(bot_label) as bot_label
+            FROM results
             WHERE author IS NOT NULL AND author != ''
             GROUP BY author ORDER BY total DESC LIMIT 20
         """)).fetchall()
-    return [{"author": r[0], "total": r[1]} for r in rows]
+    return [{"author": r[0], "total": r[1], "bot_score": r[2], "bot_label": r[3]} for r in rows]
 
 
 def db_analytics_timeline():
@@ -347,6 +358,23 @@ def db_all_results_csv():
             FROM results ORDER BY scraped_at DESC
         """)).fetchall()
     return rows
+
+
+# ── COOKIE PERSISTENCE ───────────────────────────────
+def db_save_cookies(cookie_str):
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO app_settings (key, value) VALUES ('cookies', :val)
+            ON CONFLICT (key) DO UPDATE SET value = :val
+        """), {"val": cookie_str})
+        conn.commit()
+
+def db_load_cookies():
+    with engine.connect() as conn:
+        row = conn.execute(text(
+            "SELECT value FROM app_settings WHERE key = 'cookies'"
+        )).fetchone()
+    return row[0] if row else None
 
 def db_analytics_keywords():
     with engine.connect() as conn:
