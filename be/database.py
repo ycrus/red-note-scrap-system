@@ -66,6 +66,17 @@ def init_db():
                 value TEXT
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS comments (
+                id SERIAL PRIMARY KEY,
+                result_id INTEGER REFERENCES results(id) ON DELETE CASCADE,
+                username TEXT,
+                content TEXT,
+                likes TEXT,
+                posted_at TEXT,
+                scraped_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
         conn.commit()
     print("✅ Database ready")
 
@@ -153,6 +164,15 @@ def db_get_result_detail(result_id):
         """), {"id": result_id}).fetchone()
     if not row:
         return None
+    # Also fetch comments
+    with engine.connect() as conn2:
+        crows = conn2.execute(text("""
+            SELECT username, content, likes, posted_at
+            FROM comments WHERE result_id = :id
+            ORDER BY id ASC LIMIT 50
+        """), {"id": result_id}).fetchall()
+    comments = [{"username": c[0], "content": c[1], "likes": c[2], "posted_at": c[3]} for c in crows]
+
     return {
         "id": row[0], "keyword": row[1], "title": row[2], "link": row[3],
         "author": row[4], "likes": row[5], "date": row[6],
@@ -161,6 +181,7 @@ def db_get_result_detail(result_id):
         "images": row[11] or [], "tags": row[12] or [],
         "detail_scraped": row[13],
         "scraped_at": row[14].isoformat() if row[14] else None,
+        "comments": comments,
     }
 
 
@@ -213,6 +234,27 @@ def db_update_detail(result_id, detail):
             "tags": detail.get("tags") or [],
             "id": result_id,
         })
+        conn.commit()
+
+
+def db_save_comments(result_id, comments):
+    """Save list of comment dicts for a result."""
+    if not comments:
+        return
+    with engine.connect() as conn:
+        # Delete old comments first (re-scrape)
+        conn.execute(text("DELETE FROM comments WHERE result_id = :id"), {"id": result_id})
+        for c in comments:
+            conn.execute(text("""
+                INSERT INTO comments (result_id, username, content, likes, posted_at)
+                VALUES (:rid, :username, :content, :likes, :posted_at)
+            """), {
+                "rid": result_id,
+                "username": c.get("username"),
+                "content": c.get("content"),
+                "likes": c.get("likes"),
+                "posted_at": c.get("posted_at"),
+            })
         conn.commit()
 
 
@@ -376,13 +418,6 @@ def db_load_cookies():
         )).fetchone()
     return row[0] if row else None
 
-def db_analytics_keywords():
-    with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT keyword, COUNT(*) as total FROM results GROUP BY keyword ORDER BY total DESC"
-        )).fetchall()
-    return [{"keyword": r[0], "total": r[1]} for r in rows]
-
 
 # ── TRENDING ─────────────────────────────────────────
 
@@ -497,3 +532,9 @@ def db_topics_from_results(limit=30):
 
     return [{"topic": w, "count": c} for w, c in word_count.most_common(limit)]
 
+def db_analytics_keywords():
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT keyword, COUNT(*) as total FROM results GROUP BY keyword ORDER BY total DESC"
+        )).fetchall()
+    return [{"keyword": r[0], "total": r[1]} for r in rows]
