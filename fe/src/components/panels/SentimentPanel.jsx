@@ -1,7 +1,8 @@
+import { t } from "../../i18n";
 import { useState } from "react";
 import { analyzeSentiment } from "../../api";
 
-export const SentimentPanel = ({ hfConfigured, sentimentStatus, onAnalysisStarted }) => {
+export const SentimentPanel = ({ lang = "en", hfConfigured, sentimentStatus, onAnalysisStarted }) => {
   const [limit, setLimit] = useState(50);
 
   const handleAnalyze = async () => {
@@ -23,8 +24,8 @@ export const SentimentPanel = ({ hfConfigured, sentimentStatus, onAnalysisStarte
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         {[
-          { label: "Analyzed", value: sentimentStatus.analyzed, color: "#16a34a" },
-          { label: "Pending",  value: sentimentStatus.pending,  color: "#f59e0b" },
+          { label: t("analyzed", lang), value: sentimentStatus.analyzed, color: "#16a34a" },
+          { label: t("pending", lang),  value: sentimentStatus.pending,  color: "#f59e0b" },
           { label: "Total",    value: sentimentStatus.total,    color: "#94a3b8" },
         ].map(s => (
           <div key={s.label} style={{ textAlign: "center", background: "#0f1117", borderRadius: 8, padding: "8px 4px" }}>

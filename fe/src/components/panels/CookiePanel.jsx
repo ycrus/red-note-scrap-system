@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { t } from "../../i18n";
 import { saveCookies as apiSaveCookies } from "../../api";
 
-export const CookiePanel = ({ cookieStatus, cookieKeys, onCookiesSaved }) => {
+export const CookiePanel = ({ cookieStatus, cookieKeys, onCookiesSaved, lang = "en" }) => {
   const [cookieRaw, setCookieRaw] = useState("");
   const [showPanel, setShowPanel] = useState(false);
 
@@ -22,7 +23,7 @@ export const CookiePanel = ({ cookieStatus, cookieKeys, onCookiesSaved }) => {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: 1 }}>🍪 Cookies</div>
         <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => setShowPanel(p => !p)}>
-          {showPanel ? "Close" : cookieStatus === "ok" ? "Update" : "Set Cookies"}
+          {showPanel ? "Close" : cookieStatus === "ok" ? t("updateCookies", lang) : t("setCookies", lang)}
         </button>
       </div>
 

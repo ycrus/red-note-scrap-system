@@ -1,6 +1,7 @@
+import { t } from "../../i18n";
 import { SentimentBadge } from "./SentimentBadge";
 
-export const PostDetailModal = ({ post, loading, onClose, onFetchDetail }) => {
+export const PostDetailModal = ({ post, loading, onClose, onFetchDetail, lang = "en" }) => {
   if (!post && !loading) return null;
 
   return (
@@ -65,7 +66,7 @@ export const PostDetailModal = ({ post, loading, onClose, onFetchDetail }) => {
             ) : (
               <div style={{ marginBottom: 20, padding: 16, background: "#0f1117", borderRadius: 8, border: "1px solid #2d3748", textAlign: "center" }}>
                 <div style={{ fontSize: 12, color: "#334155" }}>
-                  {post.detail_scraped ? "No content found for this post" : "Detail not scraped yet — click Fetch Details in sidebar"}
+                  {post.detail_scraped ? t("noContent", lang) : "Detail not scraped yet — click Fetch Details in sidebar"}
                 </div>
                 {!post.detail_scraped && onFetchDetail && (
                   <button className="btn" onClick={() => { onClose(); onFetchDetail(); }}

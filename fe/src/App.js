@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { t, getLang, setLang } from "./i18n";
+import { LanguageSwitcher } from "./components/ui/LanguageSwitcher";
 import { Header } from "./components/Header";
-import { Sidebar } from "./components/Sidebars";
+import { Sidebar } from "./components/Sidebar";
 import { LogsTab } from "./components/tabs/LogsTab";
 import { ResultsTab } from "./components/tabs/ResultsTab";
 import { HistoryTab } from "./components/tabs/HistoryTab";
@@ -50,7 +52,10 @@ export default function App() {
   const [dashTimeline, setDashTimeline]   = useState([]);
   const [dashAuthors, setDashAuthors]     = useState([]);
 
+  const [lang, setLangState] = useState(getLang());
   const esRef = useRef(null);
+
+  const handleChangeLang = (code) => { setLang(code); setLangState(code); };
 
   // ── Init ──────────────────────────────────────────
   useEffect(() => {
@@ -221,11 +226,12 @@ export default function App() {
           botStatus={botStatus}
           onBotDetectionStarted={handleBotDetectionStarted}
           results={results}
+          lang={lang}
         />
 
         <div style={{ display: "flex", flexDirection: "column" }}>
           {/* Tab bar */}
-          <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748" }}>
+          <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 5 }}>
               {["logs", "results", "history", "dashboard", "trending"].map(t => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`}
@@ -234,15 +240,17 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <LanguageSwitcher lang={lang} onChangeLang={handleChangeLang} />
           </div>
 
-          {tab === "logs"      && <LogsTab logs={logs} />}
-          {tab === "results"   && <ResultsTab results={results} onOpenDetail={handleOpenDetail} />}
-          {tab === "history"   && <HistoryTab history={history} onOpenDetail={handleOpenDetail} />}
+          {tab === "logs"      && <LogsTab logs={logs} lang={lang} />}
+          {tab === "results"   && <ResultsTab results={results} onOpenDetail={handleOpenDetail} lang={lang} />}
+          {tab === "history"   && <HistoryTab history={history} onOpenDetail={handleOpenDetail} lang={lang} />}
           {tab === "trending" && (
             <TrendingTab
               scraping={scraping}
               onScrapeStarted={() => { setScraping(true); handleTrendingScrapeStarted(); }}
+              lang={lang}
             />
           )}
           {tab === "dashboard" && (
@@ -252,6 +260,7 @@ export default function App() {
               timeline={dashTimeline}
               authors={dashAuthors}
               onRefresh={fetchDashboard}
+              lang={lang}
             />
           )}
         </div>
@@ -262,6 +271,7 @@ export default function App() {
         loading={detailLoading}
         onClose={() => setDetailPost(null)}
         onFetchDetail={handleDetailScrapeStarted}
+        lang={lang}
       />
     </div>
   );

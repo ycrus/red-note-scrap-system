@@ -1,9 +1,10 @@
 import { CookiePanel } from "./panels/CookiePanel";
 import { SentimentPanel } from "./panels/SentimentPanel";
 import { DetailScrapePanel } from "./panels/DetailScrapePanel";
+import { t } from "../i18n";
 import { BotPanel } from "./panels/BotPanel";
 
-export const Sidebar = ({
+export const Sidebar = ({ lang = "en",
   // Cookie
   cookieStatus, cookieKeys, onCookiesSaved,
   // Scrape controls
@@ -64,7 +65,7 @@ export const Sidebar = ({
       </div>
 
       <button className="btn btn-red" onClick={onStartScrape} disabled={scraping} style={{ width: "100%" }}>
-        {scraping ? "⏳ Scraping..." : "▶ Start Scraping"}
+        {scraping ? "⏳ Scraping..." : t("startScrape", lang)}
       </button>
 
       <SentimentPanel
@@ -90,7 +91,7 @@ export const Sidebar = ({
       {/* Stats */}
       <div className="card" style={{ padding: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {[
-          { label: "Keywords", value: keywords.split("\n").filter(k => k.trim()).length },
+          { label: t("keywords", lang), value: keywords.split("\n").filter(k => k.trim()).length },
           { label: "Results",  value: results.length },
           { label: "😊 Positive", value: sentimentCounts.positive },
           { label: "😞 Negative", value: sentimentCounts.negative },

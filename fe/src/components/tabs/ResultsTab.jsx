@@ -1,8 +1,9 @@
+import { t } from "../../i18n";
 import { useState } from "react";
 import { ResultsTable } from "../ResultsTable";
 import { downloadCsv } from "../../api";
 
-export const ResultsTab = ({ results, onOpenDetail }) => {
+export const ResultsTab = ({ results, onOpenDetail, lang = "en" }) => {
   const [search, setSearch] = useState("");
   const [sentimentFilter, setSentimentFilter] = useState("all");
 
@@ -25,11 +26,11 @@ export const ResultsTab = ({ results, onOpenDetail }) => {
               <button key={f} className="btn btn-ghost"
                 style={{ padding: "4px 10px", fontSize: 11, background: sentimentFilter === f ? "#2d3748" : "#1e2330", color: sentimentFilter === f ? "#e2e8f0" : "#e2e8f0" }}
                 onClick={() => setSentimentFilter(f)}>
-                {f === "all" ? "All" : f === "positive" ? "😊" : f === "negative" ? "😞" : "😐"}
+                {f === "all" ? t("all", lang) : f === "positive" ? "😊" : f === "negative" ? "😞" : "😐"}
               </button>
             ))}
           </div>
-          <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
+          <input placeholder={t("search", lang)} value={search} onChange={e => setSearch(e.target.value)}
             style={{ padding: "6px 10px", width: 160 }} />
           <button className="btn btn-ghost" onClick={downloadCsv}>⬇ CSV</button>
         </div>
@@ -39,7 +40,7 @@ export const ResultsTab = ({ results, onOpenDetail }) => {
         {filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: "#2d3748", paddingTop: 60 }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>📊</div>
-            <div style={{ fontSize: 13 }}>{results.length === 0 ? "No results yet." : "No results match filter."}</div>
+            <div style={{ fontSize: 13 }}>{results.length === 0 ? t("noResults", lang) : t("noResultsFilter", lang)}</div>
           </div>
         ) : (
           <ResultsTable results={filtered} onOpenDetail={onOpenDetail} />

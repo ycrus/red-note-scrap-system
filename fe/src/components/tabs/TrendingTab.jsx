@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { t } from "../../i18n";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
 
 const API = "http://localhost:5001";
@@ -98,7 +99,7 @@ const TrendingList = ({ items, label = "count" }) => {
 };
 
 // ── Main TrendingTab ────────────────────────────────
-export const TrendingTab = ({ scraping, onScrapeStarted }) => {
+export const TrendingTab = ({ scraping, onScrapeStarted, lang = "en" }) => {
   const [liveData, setLiveData]       = useState({ trending: [], last_scraped: null });
   const [dbHashtags, setDbHashtags]   = useState([]);
   const [dbTopics, setDbTopics]       = useState([]);
@@ -162,7 +163,7 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
             disabled={scraping}
             style={{ fontSize: 11 }}
           >
-            {scraping ? "Scraping..." : "🔍 Scrape Live Trends"}
+            {scraping ? t("scraping", lang) : t("scrapeLiveTrends", lang)}
           </button>
         </div>
       </div>
@@ -180,7 +181,7 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
         {[
           { key: "hashtags", label: `# Hashtags (${dbHashtags.length})` },
           { key: "topics",   label: `💬 Topics (${dbTopics.length})` },
-          { key: "chart",    label: "📊 Chart" },
+          { key: "chart",    label: t("chart", lang) },
           { key: "live",     label: `🌐 Live (${liveData.trending.length})` },
         ].map(({ key, label }) => (
           <button key={key}
@@ -200,14 +201,14 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
       {!loading && activeView === "hashtags" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div className="card" style={{ padding: 16 }}>
-            <SectionHeader title="Top Hashtags — Ranking" count={dbHashtags.length} />
+            <SectionHeader title={t("hashtagRanking", lang)} count={dbHashtags.length} />
             {dbHashtags.length === 0
-              ? <EmptyState msg="No hashtags found. Scrape some keywords first." />
+              ? <EmptyState msg={t("noHashtags", lang)} />
               : <TrendingList items={dbHashtags} />
             }
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <SectionHeader title="Hashtag Cloud" count={dbHashtags.length} />
+            <SectionHeader title={t("hashtagCloud", lang)} count={dbHashtags.length} />
             {dbHashtags.length === 0
               ? <EmptyState msg="No hashtags yet." />
               : <HashtagCloud items={dbHashtags.slice(0, 30)} />
@@ -222,12 +223,12 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
           <div className="card" style={{ padding: 16 }}>
             <SectionHeader title="Hot Topics — Kata Paling Sering Muncul" count={dbTopics.length} />
             {dbTopics.length === 0
-              ? <EmptyState msg="No topic data. Scrape some keywords first." />
+              ? <EmptyState msg={t("noTopics", lang)} />
               : <TrendingList items={dbTopics.map(t => ({ ...t, hashtag: t.topic }))} />
             }
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <SectionHeader title="Topic Cloud" count={dbTopics.length} />
+            <SectionHeader title={t("topicCloud", lang)} count={dbTopics.length} />
             {dbTopics.length === 0
               ? <EmptyState msg="No topics yet." />
               : <HashtagCloud items={dbTopics.slice(0, 30).map(t => ({ hashtag: t.topic, count: t.count }))} />
@@ -239,9 +240,9 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
       {/* CHART VIEW */}
       {!loading && activeView === "chart" && (
         <div className="card" style={{ padding: 16 }}>
-          <SectionHeader title="Top 15 Hashtags — Bar Chart" count={chartData.length} />
+          <SectionHeader title={t("top15Chart", lang)} count={chartData.length} />
           {chartData.length === 0
-            ? <EmptyState msg="No data for chart." />
+            ? <EmptyState msg={t("noData", lang)} />
             : (
               <ResponsiveContainer width="100%" height={340}>
                 <BarChart data={chartData} margin={{ top: 0, right: 0, left: -10, bottom: 80 }}>
@@ -268,13 +269,13 @@ export const TrendingTab = ({ scraping, onScrapeStarted }) => {
           <div className="card" style={{ padding: 16 }}>
             <SectionHeader title="Live Trending dari RedNote Explore" count={liveData.trending.length} />
             {liveData.trending.length === 0 ? (
-              <EmptyState msg='Belum ada data live. Klik "Scrape Live Trends" (butuh cookies valid).' />
+              <EmptyState msg={t("noLiveData", lang)} />
             ) : (
               <TrendingList items={liveData.trending.map(t => ({ hashtag: t.hashtag, count: t.count }))} />
             )}
           </div>
           <div className="card" style={{ padding: 16 }}>
-            <SectionHeader title="Sample Posts per Hashtag" />
+            <SectionHeader title={t("samplePosts", lang)} />
             {liveData.trending.length === 0 ? (
               <EmptyState msg="No live data yet." />
             ) : (

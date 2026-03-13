@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useState } from "react";
 
 const BOT_COLORS = {
@@ -22,7 +23,7 @@ export const BotBadge = ({ label, score }) => {
   );
 };
 
-export const BotPanel = ({ botStatus, scraping, cookieStatus, onStarted }) => {
+export const BotPanel = ({ lang = "en", botStatus, scraping, cookieStatus, onStarted }) => {
   const [limit, setLimit] = useState(10);
 
   const handleStart = async () => {
@@ -50,8 +51,8 @@ export const BotPanel = ({ botStatus, scraping, cookieStatus, onStarted }) => {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         {[
-          { label: "Checked",  value: botStatus.checked, color: "#16a34a" },
-          { label: "Pending",  value: botStatus.pending, color: "#f59e0b" },
+          { label: t("checked", lang),  value: botStatus.checked, color: "#16a34a" },
+          { label: t("pending", lang),  value: botStatus.pending, color: "#f59e0b" },
         ].map(s => (
           <div key={s.label} style={{ textAlign: "center", background: "#0f1117", borderRadius: 8, padding: "8px 4px" }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: s.color, fontFamily: "Syne, sans-serif" }}>{s.value ?? "—"}</div>

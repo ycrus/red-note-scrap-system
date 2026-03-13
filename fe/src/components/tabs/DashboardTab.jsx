@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const COLORS = { positive: "#16a34a", negative: "#ef4444", neutral: "#64748b" };
@@ -37,7 +38,7 @@ const EmptyChart = () => (
   <div style={{ textAlign: "center", color: "#334155", padding: "30px 0", fontSize: 12 }}>No data yet</div>
 );
 
-export const DashboardTab = ({ keywords, sentiment, timeline, authors, onRefresh }) => {
+export const DashboardTab = ({ keywords, sentiment, timeline, authors, onRefresh, lang = "en" }) => {
   const totalResults = keywords.reduce((a, b) => a + b.total, 0);
 
   return (
@@ -49,10 +50,10 @@ export const DashboardTab = ({ keywords, sentiment, timeline, authors, onRefresh
 
       {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-        <StatCard label="Total Posts"       value={totalResults} />
-        <StatCard label="Keywords Tracked"  value={keywords.length}  color="#7c3aed" />
-        <StatCard label="Positive"          value={sentiment.overall?.find(s => s.sentiment === "positive")?.total || 0} color="#16a34a" />
-        <StatCard label="Negative"          value={sentiment.overall?.find(s => s.sentiment === "negative")?.total || 0} color="#ef4444" />
+        <StatCard label={t("totalPosts", lang)}       value={totalResults} />
+        <StatCard label={t("keywordsTracked", lang)}  value={keywords.length}  color="#7c3aed" />
+        <StatCard label={t("positive", lang)}          value={sentiment.overall?.find(s => s.sentiment === "positive")?.total || 0} color="#16a34a" />
+        <StatCard label={t("negative", lang)}          value={sentiment.overall?.find(s => s.sentiment === "negative")?.total || 0} color="#ef4444" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
