@@ -10,10 +10,10 @@ from sentiment import analyze_sentiment
 
 
 # ── SEARCH SCRAPER ───────────────────────────────────
-def run_scraper(keywords, max_scroll, cookies, auto_sentiment=False):
+def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
     state.scrape_results = []
     state.is_scraping = True
-    session_id = db_save_session(keywords, max_scroll)
+    session_id = db_save_session(keywords, max_posts)
     state.push_log(f"📦 Session #{session_id} created in database")
 
     try:
@@ -23,13 +23,17 @@ def run_scraper(keywords, max_scroll, cookies, auto_sentiment=False):
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
             )
+            # Log cookies yang akan di-set
+            ws_check = next((c for c in cookies if c["name"] == "web_session"), None)
+            state.push_log(f"   Setting {len(cookies)} cookies, web_session: {'OK' if ws_check else 'MISSING'}")
+
             context.add_cookies(cookies)
             page = context.new_page()
 
-            # Debug: verifikasi cookies ter-set
+            # Verifikasi cookies berhasil di-set
             ctx_cookies = context.cookies(["https://www.rednote.com"])
             web_session = next((c for c in ctx_cookies if c["name"] == "web_session"), None)
-            state.push_log(f"   Cookies loaded: {len(ctx_cookies)}, web_session: {'OK' if web_session else 'MISSING'}")
+            state.push_log(f"   Cookies in context: {len(ctx_cookies)}, web_session: {'OK' if web_session else 'MISSING'}")
 
             # Visit homepage dulu agar cookies aktif
             page.goto("https://www.rednote.com")
@@ -49,109 +53,125 @@ def run_scraper(keywords, max_scroll, cookies, auto_sentiment=False):
                         state.push_error("Cookie expired! Please update cookies.")
                         break
 
-                    for i in range(max_scroll):
-                        state.push_log(f"   Scrolling... ({i+1}/{max_scroll})")
-                        page.mouse.wheel(0, 5000)
-                        time.sleep(random.uniform(1.5, 2.5))
+                    # Scroll sampai cukup post terkumpul atau tidak ada post baru
+                    seen_links = set()
+                    count = 0
+                    scroll_round = 0
+                    max_scroll_rounds = 30  # safety limit
+                    no_new_count = 0
 
-                    # Selector utama berdasarkan struktur HTML RedNote
-                    cards = page.locator("section.note-item").all()
-                    state.push_log(f"   Found {len(cards)} cards (section.note-item)")
+                    def get_cards():
+                        cards = page.locator("section.note-item").all()
+                        if not cards:
+                            for sel in ["section[data-v-79abd645]", "[class*='note-item']", "section"]:
+                                cards = page.locator(sel).all()
+                                if cards: break
+                        return cards
 
-                    # Fallback selectors jika masih kosong
-                    if len(cards) == 0:
-                        for sel in ["section[data-v-79abd645]", "[class*='note-item']", "section"]:
-                            cards = page.locator(sel).all()
-                            if len(cards) > 0:
-                                state.push_log(f"   Fallback '{sel}': {len(cards)} cards")
+                    state.push_log(f"   Target: {max_posts} posts")
+
+                    while count < max_posts and scroll_round < max_scroll_rounds:
+                        scroll_round += 1
+                        cards = get_cards()
+                        prev_count = count
+
+                        # Process new cards
+                        for card in cards:
+                            if count >= max_posts:
                                 break
+                            try:
+                                title = None
+                                for sel in ["a.title span", "span[data-v-51ec0135]", "[class*='title'] span"]:
+                                    try:
+                                        title = card.locator(sel).first.inner_text(timeout=2000).strip()
+                                        if title: break
+                                    except: continue
 
-                    if len(cards) == 0:
+                                link = None
+                                for sel in ["a.cover", "a[href*='/explore/']", "a[href*='/search_result/']"]:
+                                    try:
+                                        link = card.locator(sel).first.get_attribute("href")
+                                        if link: break
+                                    except: continue
+
+                                if not title or not link or link in seen_links:
+                                    continue
+                                seen_links.add(link)
+
+                                author = None
+                                for sel in ["div.name", "[class*='name']"]:
+                                    try:
+                                        author = card.locator(sel).first.inner_text(timeout=2000).strip()
+                                        if author: break
+                                    except: continue
+
+                                likes = None
+                                for sel in ["span.count", "[class*='count']"]:
+                                    try:
+                                        likes = card.locator(sel).first.inner_text(timeout=2000).strip()
+                                        if likes: break
+                                    except: continue
+
+                                date = None
+                                for sel in ["div.time", "[class*='time']"]:
+                                    try:
+                                        date = card.locator(sel).first.inner_text(timeout=2000).strip()
+                                        if date: break
+                                    except: continue
+
+                                sentiment, score = (None, None)
+                                if auto_sentiment:
+                                    sentiment, score = analyze_sentiment(title)
+
+                                row = {
+                                    "keyword": keyword,
+                                    "title": title.strip(),
+                                    "link": f"https://www.rednote.com{link}",
+                                    "author": author.strip() if author else None,
+                                    "likes": likes.strip() if likes else None,
+                                    "date": date.strip() if date else None,
+                                    "sentiment": sentiment,
+                                    "sentiment_score": score,
+                                }
+                                db_id = db_save_result(session_id, row)
+                                row["id"] = db_id
+                                state.scrape_results.append(row)
+                                state.push_result(row)
+                                count += 1
+
+                            except:
+                                continue
+
+                        state.push_log(f"   [{count}/{max_posts}] Scroll {scroll_round} — {len(cards)} cards visible")
+
+                        if count >= max_posts:
+                            state.push_log(f"   Target reached!")
+                            break
+
+                        # Cek apakah ada post baru setelah scroll
+                        if count == prev_count:
+                            no_new_count += 1
+                            if no_new_count >= 3:
+                                state.push_log(f"   No new posts after 3 scrolls, stopping.")
+                                break
+                        else:
+                            no_new_count = 0
+
+                        # Scroll untuk load lebih banyak
+                        page.mouse.wheel(0, 5000)
+                        time.sleep(random.uniform(2, 3))
+
+                    if len(seen_links) == 0:
                         page.screenshot(path="/tmp/rednote_debug.png")
-                        state.push_log(f"   Screenshot saved to /tmp/rednote_debug.png")
                         try:
                             import re
                             html = page.content()
                             sections = re.findall(r'<section[^>]*>', html)
                             state.push_log(f"   Sections: {sections[:3]}")
-                            note_classes = list(set(re.findall(r'class="([^"]*note[^"]*)"', html)))
-                            state.push_log(f"   Note classes: {note_classes[:5]}")
                             state.push_log(f"   URL: {page.url}")
-                        except Exception as de:
-                            state.push_log(f"   Debug err: {de}")
+                        except: pass
 
-                    seen_links = set()
-                    count = 0
-
-                    for card in cards:
-                        try:
-                            # Title: a.title span atau span[data-v-51ec0135]
-                            title = None
-                            for sel in ["a.title span", "span[data-v-51ec0135]", "[class*='title'] span"]:
-                                try:
-                                    title = card.locator(sel).first.inner_text(timeout=2000).strip()
-                                    if title: break
-                                except: continue
-
-                            # Link: a.cover[href] atau a[href*='/explore/'] atau a[href*='/search_result/']
-                            link = None
-                            for sel in ["a.cover", "a[href*='/explore/']", "a[href*='/search_result/']"]:
-                                try:
-                                    link = card.locator(sel).first.get_attribute("href")
-                                    if link: break
-                                except: continue
-
-                            # Author: div.name
-                            author = None
-                            for sel in ["div.name", "[class*='name']"]:
-                                try:
-                                    author = card.locator(sel).first.inner_text(timeout=2000).strip()
-                                    if author: break
-                                except: continue
-
-                            # Likes: span.count
-                            likes = None
-                            for sel in ["span.count", "[class*='count']"]:
-                                try:
-                                    likes = card.locator(sel).first.inner_text(timeout=2000).strip()
-                                    if likes: break
-                                except: continue
-
-                            # Date: div.time
-                            date = None
-                            for sel in ["div.time", "[class*='time']"]:
-                                try:
-                                    date = card.locator(sel).first.inner_text(timeout=2000).strip()
-                                    if date: break
-                                except: continue
-
-                            if not title or not link or link in seen_links:
-                                continue
-                            seen_links.add(link)
-
-                            sentiment, score = (None, None)
-                            if auto_sentiment:
-                                sentiment, score = analyze_sentiment(title)
-
-                            row = {
-                                "keyword": keyword,
-                                "title": title.strip(),
-                                "link": f"https://www.rednote.com{link}",
-                                "author": author.strip(),
-                                "likes": likes.strip(),
-                                "date": date.strip(),
-                                "sentiment": sentiment,
-                                "sentiment_score": score,
-                            }
-                            db_id = db_save_result(session_id, row)
-                            row["id"] = db_id
-                            state.scrape_results.append(row)
-                            state.push_result(row)
-                            count += 1
-                        except:
-                            pass
-
-                    state.push_log(f"   ✅ '{keyword}' done: {count} results saved")
+                    state.push_log(f"   '{keyword}' done: {count} results saved")
                     time.sleep(random.uniform(5, 8))
 
                 except Exception as e:

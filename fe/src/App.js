@@ -8,6 +8,7 @@ import { ResultsTab } from "./components/tabs/ResultsTab";
 import { HistoryTab } from "./components/tabs/HistoryTab";
 import { DashboardTab } from "./components/tabs/DashboardTab";
 import { TrendingTab } from "./components/tabs/TrendingTab";
+import { SemanticSearchTab } from "./components/tabs/SemanticSearchTab";
 import { PostDetailModal } from "./components/ui/PostDetailModal";
 import {
   getCookies, getStatus, startScrape, createEventSource,
@@ -20,7 +21,7 @@ import {
 export default function App() {
   // ── Scrape state ──────────────────────────────────
   const [keywords, setKeywords]     = useState("");
-  const [maxScroll, setMaxScroll]   = useState(5);
+  const [maxPosts, setMaxPosts]     = useState(50);
   const [autoSentiment, setAutoSentiment] = useState(false);
   const [logs, setLogs]             = useState([]);
   const [results, setResults]       = useState([]);
@@ -106,7 +107,7 @@ export default function App() {
     setLogs([]); setResults([]); setScraping(true); setTab("logs");
 
     try {
-      await startScrape(kws, maxScroll, autoSentiment);
+      await startScrape(kws, maxPosts, autoSentiment);
       subscribeToStream((item) => {
         setLogs(prev => [...prev, { type: "done", message: `✅ Done! ${item.total} results collected.`, time: new Date().toLocaleTimeString(), id: Date.now() }]);
         setScraping(false);
@@ -159,13 +160,14 @@ export default function App() {
   };
 
   // ── Tab labels ────────────────────────────────────
-  const tabLabel = (t) => ({
-    logs:      `📋 Logs (${logs.length})`,
-    results:   `📊 Results (${results.length})`,
-    history:   `🕘 History (${history.length})`,
-    dashboard: `📈 Dashboard`,
-    trending: `🔥 Trending`,
-  }[t]);
+  const tabLabel = (tab) => ({
+    logs:      `${t("tabLogs", lang)} (${logs.length})`,
+    results:   `${t("tabResults", lang)} (${results.length})`,
+    history:   `${t("tabHistory", lang)} (${history.length})`,
+    dashboard: t("tabDashboard", lang),
+    trending:  t("tabTrending", lang),
+    search:    "🔎 Semantic Search",
+  }[tab]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f1117", color: "#e2e8f0", fontFamily: "'IBM Plex Mono', 'Courier New', monospace" }}>
@@ -214,7 +216,7 @@ export default function App() {
           cookieKeys={cookieKeys}
           onCookiesSaved={(keys) => { setCookieKeys(keys); setCookieStatus("ok"); }}
           keywords={keywords} setKeywords={setKeywords}
-          maxScroll={maxScroll} setMaxScroll={setMaxScroll}
+          maxPosts={maxPosts} setMaxPosts={setMaxPosts}
           autoSentiment={autoSentiment} setAutoSentiment={setAutoSentiment}
           hfConfigured={hfConfigured}
           scraping={scraping}
@@ -233,7 +235,7 @@ export default function App() {
           {/* Tab bar */}
           <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 5 }}>
-              {["logs", "results", "history", "dashboard", "trending"].map(t => (
+              {["logs", "results", "history", "dashboard", "trending", "search"].map(t => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`}
                   onClick={() => { setTab(t); if (t === "history") getHistory().then(setHistory).catch(() => {}); if (t === "dashboard") fetchDashboard(); }}>
                   {tabLabel(t)}
@@ -246,6 +248,7 @@ export default function App() {
           {tab === "logs"      && <LogsTab logs={logs} lang={lang} />}
           {tab === "results"   && <ResultsTab results={results} onOpenDetail={handleOpenDetail} lang={lang} />}
           {tab === "history"   && <HistoryTab history={history} onOpenDetail={handleOpenDetail} lang={lang} />}
+          {tab === "search" && <SemanticSearchTab lang={lang} />}
           {tab === "trending" && (
             <TrendingTab
               scraping={scraping}

@@ -34,10 +34,17 @@ def parse_cookie_string(cookie_str):
         part = part.strip()
         if "=" in part:
             name, _, value = part.partition("=")
-            cookies.append({
-                "name": name.strip(),
-                "value": value.strip(),
-                "domain": ".rednote.com",
-                "path": "/"
-            })
+            name = name.strip()
+            value = value.strip()
+            # Add cookie for both domain variants so Playwright always matches
+            for domain in [".rednote.com", "www.rednote.com"]:
+                cookies.append({
+                    "name": name,
+                    "value": value,
+                    "domain": domain,
+                    "path": "/",
+                    "httpOnly": False,
+                    "secure": True,
+                    "sameSite": "Lax",
+                })
     return cookies

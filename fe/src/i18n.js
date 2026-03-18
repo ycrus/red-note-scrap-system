@@ -43,7 +43,7 @@ const translations = {
 
   keywords:         { en: "Keywords",         jp: "キーワード",      id: "Keyword" },
   keywordsHint:     { en: "One keyword per line", jp: "1行1キーワード", id: "Satu keyword per baris" },
-  maxScroll:        { en: "Max Scroll",        jp: "最大スクロール",  id: "Max Scroll" },
+  maxPosts:         { en: "Max Posts",         jp: "最大投稿数",      id: "Max Post" },
   autoSentiment:    { en: "Auto Sentiment",    jp: "自動感情分析",    id: "Auto Sentiment" },
   startScrape:      { en: "▶ Start Scraping",  jp: "▶ スクレイプ開始", id: "▶ Mulai Scraping" },
   scraping:         { en: "Scraping...",       jp: "処理中...",      id: "Scraping..." },
@@ -102,7 +102,7 @@ const translations = {
   fetchDetails:     { en: "🔍 Fetch Details",      jp: "🔍 詳細取得",      id: "🔍 Fetch Details" },
   running:          { en: "⏳ Running...",          jp: "⏳ 処理中...",     id: "⏳ Berjalan..." },
   fetchDetailHint:  { en: "Fetches full content, images & tags per post", jp: "投稿の本文・画像・タグを取得", id: "Ambil konten, gambar & tag per post" },
-  scrollDepth:      { en: "SCROLL DEPTH",          jp: "スクロール深度",   id: "SCROLL DEPTH" },
+  maxPosts:         { en: "MAX POSTS",              jp: "最大投稿数",       id: "MAX POST" },
   autoSentimentHint:{ en: "Analyze while scraping (slower)", jp: "スクレイプ中に分析（低速）", id: "Analisis saat scraping (lebih lambat)" },
 
   // ── Detail Scrape Panel ──────────────────────────────
@@ -143,7 +143,16 @@ const translations = {
   noTopics:         { en: "No topic data. Scrape some keywords first.", jp: "トピックなし。キーワードをスクレイプしてください。", id: "Belum ada topik. Scrape keyword dulu." },
   noLiveData:       { en: "No live data yet. Click Scrape Live Trends (requires valid cookies).", jp: "ライブデータなし。Cookie設定後に取得してください。", id: "Belum ada data live. Klik Scrape Live Trends (butuh cookies valid)." },
   scrapeTip:        { en: "💡 Scrape some keywords first to analyze local hashtags & topics. Or click Scrape Live Trends for real-time data (requires valid cookies).", jp: "💡 まずキーワードをスクレイプしてローカル分析を行うか、Scrape Live Trendsでリアルタイムデータを取得してください（Cookie必要）。", id: "💡 Scrape beberapa keyword dulu agar hashtag & topik bisa dianalisis. Atau klik Scrape Live Trends untuk data real-time (butuh cookies valid)." },
-};
+
+  // ── Browser Login ─────────────────────────────────────
+  loginViaBrowser:  { en: "🌐 Login via Browser", jp: "🌐 ブラウザでログイン", id: "🌐 Login via Browser" },
+  loginWaiting:     { en: "Waiting for login...", jp: "ログイン待機中...",     id: "Menunggu login..." },
+  loginSuccess:     { en: "✅ Login successful!", jp: "✅ ログイン成功！",      id: "✅ Login berhasil!" },
+  loginTimeout:     { en: "Login timeout",        jp: "タイムアウト",          id: "Login timeout" },
+  reloadCookies:    { en: "↺ Reload Saved",       jp: "↺ 保存済み読込",        id: "↺ Muat Tersimpan" },
+  cookiesExpired:   { en: "Cookies may be expired", jp: "Cookieが期限切れかも", id: "Cookies mungkin kadaluwarsa" },
+
+  };
 
 // ── Hook / helper ─────────────────────────────────────
 const STORAGE_KEY = "rednote_lang";

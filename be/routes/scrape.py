@@ -3,7 +3,7 @@ import threading
 import json
 import state
 from scraper import run_scraper, run_detail_scraper
-from database import db_get_undetailed_ids, db_detail_scrape_status
+from database import db_get_undetailed_ids, db_detail_scrape_status, db_load_cookies, db_save_cookies
 from state import parse_cookie_string, clear_queue
 
 scrape_bp = Blueprint("scrape", __name__)
@@ -30,6 +30,42 @@ def get_cookies():
     })
 
 
+@scrape_bp.route("/api/cookies/login", methods=["POST"])
+def browser_login():
+    """Open a real browser window for manual login, then auto-save cookies."""
+    if state.is_scraping:
+        return jsonify({"error": "Scraping already in progress"}), 400
+    from browser_login import run_browser_login
+    clear_queue()
+    state.is_scraping = True
+    thread = threading.Thread(target=run_browser_login)
+    thread.daemon = True
+    thread.start()
+    return jsonify({"status": "started"})
+
+
+@scrape_bp.route("/api/cookies/chrome-status", methods=["GET"])
+def chrome_status():
+    """Cek apakah Chrome running dengan debug port."""
+    from browser_login import is_chrome_running, CHROME_DEBUG_PORT
+    running = is_chrome_running()
+    return jsonify({"running": running, "port": CHROME_DEBUG_PORT})
+
+
+@scrape_bp.route("/api/cookies/reload", methods=["POST"])
+def reload_cookies():
+    """Reload cookies from DB into memory (useful after Flask restart)."""
+    raw = db_load_cookies()
+    if not raw:
+        return jsonify({"error": "No saved cookies in database"}), 404
+    state.current_cookies = parse_cookie_string(raw)
+    return jsonify({
+        "status": "ok",
+        "count": len(state.current_cookies),
+        "keys": [c["name"] for c in state.current_cookies]
+    })
+
+
 @scrape_bp.route("/api/scrape", methods=["POST"])
 def start_scrape():
     if state.is_scraping:
@@ -39,7 +75,7 @@ def start_scrape():
 
     body = request.json or {}
     keywords = [k.strip() for k in body.get("keywords", []) if k.strip()]
-    max_scroll = int(body.get("max_scroll", 5))
+    max_posts = int(body.get("max_posts", 50))
     auto_sentiment = bool(body.get("auto_sentiment", False))
 
     if not keywords:
@@ -48,7 +84,7 @@ def start_scrape():
     clear_queue()
     thread = threading.Thread(
         target=run_scraper,
-        args=(keywords, max_scroll, list(state.current_cookies), auto_sentiment)
+        args=(keywords, max_posts, list(state.current_cookies), auto_sentiment)
     )
     thread.daemon = True
     thread.start()
