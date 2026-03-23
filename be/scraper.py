@@ -18,11 +18,27 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ]
+            )
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1440, "height": 900},
+                java_script_enabled=True,
+                ignore_https_errors=True,
             )
+            # Sembunyikan tanda-tanda automation
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN','zh','en']});
+            """)
             # Log cookies yang akan di-set
             ws_check = next((c for c in cookies if c["name"] == "web_session"), None)
             state.push_log(f"   Setting {len(cookies)} cookies, web_session: {'OK' if ws_check else 'MISSING'}")
@@ -53,6 +69,36 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
                         state.push_error("Cookie expired! Please update cookies.")
                         break
 
+                    # Tunggu sampai konten JS render — coba beberapa selector
+                    state.push_log("   Waiting for content to render...")
+                    content_loaded = False
+                    for wait_sel in [
+                        "section.note-item",
+                        "[class*='note-item']",
+                        "[class*='feeds-container']",
+                        "[class*='search-result']",
+                        "section",
+                    ]:
+                        try:
+                            page.wait_for_selector(wait_sel, timeout=8000)
+                            state.push_log(f"   Content found via: {wait_sel}")
+                            content_loaded = True
+                            break
+                        except:
+                            continue
+
+                    if not content_loaded:
+                        state.push_log("   Content not detected after wait, proceeding anyway...")
+                        time.sleep(5)
+                    else:
+                        # Extra wait untuk virtual scroll render semua cards
+                        time.sleep(3)
+                        # Scroll sedikit untuk trigger virtual scroll
+                        page.mouse.wheel(0, 300)
+                        time.sleep(2)
+                        page.mouse.wheel(0, -300)
+                        time.sleep(1)
+
                     # Scroll sampai cukup post terkumpul atau tidak ada post baru
                     seen_links = set()
                     count = 0
@@ -61,12 +107,23 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
                     no_new_count = 0
 
                     def get_cards():
-                        cards = page.locator("section.note-item").all()
-                        if not cards:
-                            for sel in ["section[data-v-79abd645]", "[class*='note-item']", "section"]:
+                        # Coba semua selector yang mungkin
+                        for sel in [
+                            "section.note-item",
+                            "section[class*='note']",
+                            "[class*='note-item']",
+                            "[class*='noteItem']",
+                            "[class*='feed-item']",
+                            "[class*='feedItem']",
+                            "section",
+                        ]:
+                            try:
                                 cards = page.locator(sel).all()
-                                if cards: break
-                        return cards
+                                if cards and len(cards) > 0:
+                                    return cards
+                            except:
+                                continue
+                        return []
 
                     state.push_log(f"   Target: {max_posts} posts")
 
@@ -88,10 +145,13 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
                                     except: continue
 
                                 link = None
-                                for sel in ["a.cover", "a[href*='/explore/']", "a[href*='/search_result/']"]:
+                                # Coba ambil dari href attribute langsung
+                                for sel in ["a[href*='/search_result/']", "a[href*='/explore/']", "a.cover", "a[href]"]:
                                     try:
-                                        link = card.locator(sel).first.get_attribute("href")
-                                        if link: break
+                                        href = card.locator(sel).first.get_attribute("href", timeout=2000)
+                                        if href and ('/explore/' in href or '/search_result/' in href):
+                                            link = href
+                                            break
                                     except: continue
 
                                 if not title or not link or link in seen_links:
@@ -326,11 +386,27 @@ def run_detail_scraper(result_ids, cookies):
     """Open browser and scrape details for a list of result IDs."""
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ]
+            )
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1440, "height": 900},
+                java_script_enabled=True,
+                ignore_https_errors=True,
             )
+            # Sembunyikan tanda-tanda automation
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN','zh','en']});
+            """)
             context.add_cookies(cookies)
             page = context.new_page()
 
