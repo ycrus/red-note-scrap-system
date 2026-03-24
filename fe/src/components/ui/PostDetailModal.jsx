@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { t } from "../../i18n";
 import { SentimentBadge } from "./SentimentBadge";
 
@@ -6,6 +6,16 @@ const BOT_COLORS = { high: "#ef4444", medium: "#f59e0b", low: "#6366f1", clean: 
 
 export const PostDetailModal = ({ post, loading, onClose, onFetchDetail, lang = "en" }) => {
   const [commentPage, setCommentPage] = useState(0);
+  const [b64Images, setB64Images]     = useState([]);
+
+  useEffect(() => {
+    if (!post?.id) return;
+    setB64Images([]);
+    fetch(`http://localhost:5001/api/images/${post.id}`)
+      .then(r => r.json())
+      .then(d => { if (d.images?.length > 0) setB64Images(d.images); })
+      .catch(() => {});
+  }, [post?.id]);
   const COMMENTS_PER_PAGE = 10;
 
   if (!post && !loading) return null;
@@ -57,15 +67,21 @@ export const PostDetailModal = ({ post, loading, onClose, onFetchDetail, lang = 
             )}
 
             {/* Images */}
-            {post.images?.length > 0 && (
+            {(b64Images.length > 0 || post.images?.length > 0) && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-                  {t("images", lang)} ({post.images.length})
+                  {t("images", lang)} ({b64Images.length > 0 ? b64Images.length : post.images.length})
+                  {b64Images.length > 0 && <span style={{ fontSize: 9, color: "#16a34a", marginLeft: 8 }}>cached</span>}
                 </div>
                 <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-                  {post.images.map((src, i) => (
-                    <img key={i} src={src} alt="" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1px solid #2d3748" }} />
-                  ))}
+                  {b64Images.length > 0
+                    ? b64Images.map((img, i) => (
+                        <img key={i} src={img.base64} alt="" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1px solid #2d3748" }} />
+                      ))
+                    : post.images.map((src, i) => (
+                        <img key={i} src={src} alt="" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1px solid #2d3748" }} />
+                      ))
+                  }
                 </div>
               </div>
             )}

@@ -3,6 +3,7 @@ import { SentimentPanel } from "./panels/SentimentPanel";
 import { DetailScrapePanel } from "./panels/DetailScrapePanel";
 import { t } from "../i18n";
 import { BotPanel } from "./panels/BotPanel";
+import { ImagePanel } from "./panels/ImagePanel";
 
 export const Sidebar = ({ lang = "en",
   // Cookie
@@ -94,6 +95,12 @@ export const Sidebar = ({ lang = "en",
         cookieStatus={cookieStatus}
         onStarted={onBotDetectionStarted}
       lang={lang}
+      />
+
+      <ImagePanel
+        scraping={scraping}
+        onStarted={onDetailScrapeStarted}
+        lang={lang}
       />
 
       {/* Stats */}

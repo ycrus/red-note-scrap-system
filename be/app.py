@@ -6,7 +6,7 @@ import os
 load_dotenv()
 
 from database import init_db
-from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp
+from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -18,6 +18,7 @@ app.register_blueprint(analytics_bp)
 app.register_blueprint(bot_bp)
 app.register_blueprint(trending_bp)
 app.register_blueprint(embed_bp)
+app.register_blueprint(image_bp)
 
 
 if __name__ == "__main__":
@@ -27,6 +28,10 @@ if __name__ == "__main__":
     try:
         from embedder import init_embedding_column
         init_embedding_column()
+        from image_downloader import init_images_table
+        init_images_table()
+    except Exception as e:
+        print(f"Image table init warning: {e}")
     except Exception as e:
         print(f"Embedding init warning: {e}")
 
