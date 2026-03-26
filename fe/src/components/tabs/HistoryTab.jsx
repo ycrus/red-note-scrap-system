@@ -60,6 +60,11 @@ export const HistoryTab = ({ history, onOpenDetail }) => {
         <div style={{ overflowY: "auto", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "10px 16px", borderBottom: "1px solid #2d3748", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>Session #{selectedSession} — {sessionResults.length} results</span>
+              <button className="btn btn-ghost"
+                onClick={() => window.open(`http://localhost:5001/api/download/json/${selectedSession}`, "_blank")}
+                style={{ fontSize: 10, color: "#16a34a", borderColor: "#16a34a", padding: "4px 10px" }}>
+                ⬇ JSON
+              </button>
             <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 11 }}
               onClick={() => { setSelectedSession(null); setSessionResults([]); }}>✕ Close</button>
           </div>

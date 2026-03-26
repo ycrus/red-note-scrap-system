@@ -74,20 +74,25 @@ def init_db():
                 content TEXT,
                 likes TEXT,
                 posted_at TEXT,
+                parent_username TEXT,
+                is_reply BOOLEAN DEFAULT FALSE,
                 scraped_at TIMESTAMP DEFAULT NOW()
             )
         """))
+        # Add reply columns to comments if not exist
+        conn.execute(text("ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_username TEXT"))
+        conn.execute(text("ALTER TABLE comments ADD COLUMN IF NOT EXISTS is_reply BOOLEAN DEFAULT FALSE"))
         conn.commit()
     print("✅ Database ready")
 
 
 # ── SESSION QUERIES ──────────────────────────────────
-def db_save_session(keywords, max_scroll):
+def db_save_session(keywords, max_posts):
     with engine.connect() as conn:
         result = conn.execute(text("""
             INSERT INTO scrape_sessions (keywords, max_scroll)
             VALUES (:kw, :ms) RETURNING id
-        """), {"kw": keywords, "ms": max_scroll})
+        """), {"kw": keywords, "ms": max_posts})
         conn.commit()
         return result.fetchone()[0]
 
@@ -168,10 +173,11 @@ def db_get_result_detail(result_id):
     with engine.connect() as conn2:
         crows = conn2.execute(text("""
             SELECT username, content, likes, posted_at
+            , parent_username, is_reply
             FROM comments WHERE result_id = :id
             ORDER BY id ASC LIMIT 50
         """), {"id": result_id}).fetchall()
-    comments = [{"username": c[0], "content": c[1], "likes": c[2], "posted_at": c[3]} for c in crows]
+    comments = [{"username": c[0], "content": c[1], "likes": c[2], "posted_at": c[3], "parent_username": c[4], "is_reply": c[5]} for c in crows]
 
     return {
         "id": row[0], "keyword": row[1], "title": row[2], "link": row[3],
@@ -225,6 +231,7 @@ def db_update_detail(result_id, detail):
                 comments_count = :comments,
                 images = :images,
                 tags = :tags,
+                video_url = :video_url,
                 detail_scraped = TRUE
             WHERE id = :id
         """), {
@@ -232,28 +239,30 @@ def db_update_detail(result_id, detail):
             "comments": detail.get("comments_count"),
             "images": detail.get("images") or [],
             "tags": detail.get("tags") or [],
+            "video_url": detail.get("video_url"),
             "id": result_id,
         })
         conn.commit()
 
 
 def db_save_comments(result_id, comments):
-    """Save list of comment dicts for a result."""
+    """Save list of comment dicts (including replies) for a result."""
     if not comments:
         return
     with engine.connect() as conn:
-        # Delete old comments first (re-scrape)
         conn.execute(text("DELETE FROM comments WHERE result_id = :id"), {"id": result_id})
         for c in comments:
             conn.execute(text("""
-                INSERT INTO comments (result_id, username, content, likes, posted_at)
-                VALUES (:rid, :username, :content, :likes, :posted_at)
+                INSERT INTO comments (result_id, username, content, likes, posted_at, parent_username, is_reply)
+                VALUES (:rid, :username, :content, :likes, :posted_at, :parent_username, :is_reply)
             """), {
                 "rid": result_id,
                 "username": c.get("username"),
                 "content": c.get("content"),
                 "likes": c.get("likes"),
                 "posted_at": c.get("posted_at"),
+                "parent_username": c.get("parent_username"),
+                "is_reply": c.get("is_reply", False),
             })
         conn.commit()
 

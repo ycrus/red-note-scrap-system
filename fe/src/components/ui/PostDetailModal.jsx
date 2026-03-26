@@ -67,6 +67,23 @@ export const PostDetailModal = ({ post, loading, onClose, onFetchDetail, lang = 
             )}
 
             {/* Images */}
+            {/* ── VIDEO PLAYER ── */}
+            {post.video_url && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                  🎬 Video
+                </div>
+                <video
+                  controls
+                  style={{ width: "100%", borderRadius: 8, maxHeight: 400, background: "#000" }}
+                  src={`http://localhost:5001/api/video/proxy?url=${encodeURIComponent(post.video_url)}`}
+                  preload="metadata"
+                >
+                  Your browser does not support video playback.
+                </video>
+              </div>
+            )}
+
             {(b64Images.length > 0 || post.images?.length > 0) && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
@@ -147,22 +164,47 @@ export const PostDetailModal = ({ post, loading, onClose, onFetchDetail, lang = 
                     : t("noDetailYet", lang)}
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {visibleComments.map((c, i) => (
-                    <div key={i} style={{ background: "#0f1117", borderRadius: 10, padding: "10px 14px", border: "1px solid #1e2330" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#1e2330", border: "1px solid #2d3748", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#ff2442", fontWeight: 700, flexShrink: 0 }}>
+                    <div key={i} style={{
+                      background: c.is_reply ? "transparent" : "#0f1117",
+                      borderRadius: 10,
+                      padding: c.is_reply ? "8px 10px 8px 20px" : "10px 14px",
+                      border: c.is_reply ? "none" : "1px solid #1e2330",
+                      marginLeft: c.is_reply ? 32 : 0,
+                      borderLeft: c.is_reply ? "2px solid #2d3748" : "none",
+                    }}>
+                      {/* Reply indicator */}
+                      {c.is_reply && c.parent_username && (
+                        <div style={{ fontSize: 10, color: "#475569", marginBottom: 4 }}>
+                          ↳ replying to <span style={{ color: "#7c3aed" }}>@{c.parent_username}</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{
+                            width: c.is_reply ? 18 : 24,
+                            height: c.is_reply ? 18 : 24,
+                            borderRadius: "50%",
+                            background: c.is_reply ? "#1a1f2e" : "#1e2330",
+                            border: "1px solid #2d3748",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: c.is_reply ? 9 : 11,
+                            color: c.is_reply ? "#7c3aed" : "#ff2442",
+                            fontWeight: 700, flexShrink: 0
+                          }}>
                             {c.username ? c.username[0].toUpperCase() : "?"}
                           </div>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0" }}>{c.username || "—"}</span>
+                          <span style={{ fontSize: c.is_reply ? 10 : 11, fontWeight: 600, color: c.is_reply ? "#94a3b8" : "#e2e8f0" }}>
+                            {c.username || "—"}
+                          </span>
                         </div>
-                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           {c.likes && <span style={{ fontSize: 10, color: "#475569" }}>❤️ {c.likes}</span>}
                           {c.posted_at && <span style={{ fontSize: 10, color: "#334155" }}>{c.posted_at}</span>}
                         </div>
                       </div>
-                      <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, paddingLeft: 32 }}>
+                      <div style={{ fontSize: c.is_reply ? 11 : 12, color: c.is_reply ? "#94a3b8" : "#cbd5e1", lineHeight: 1.6, paddingLeft: c.is_reply ? 24 : 30 }}>
                         {c.content}
                       </div>
                     </div>
