@@ -77,6 +77,8 @@ def start_scrape():
     keywords = [k.strip() for k in body.get("keywords", []) if k.strip()]
     max_posts = int(body.get("max_posts", 50))
     auto_sentiment = bool(body.get("auto_sentiment", False))
+    min_likes = int(body.get("min_likes", 0))
+    scrape_detail = bool(body.get("scrape_detail", False))
 
     if not keywords:
         return jsonify({"error": "No keywords provided"}), 400
@@ -84,7 +86,7 @@ def start_scrape():
     clear_queue()
     thread = threading.Thread(
         target=run_scraper,
-        args=(keywords, max_posts, list(state.current_cookies), auto_sentiment)
+        args=(keywords, max_posts, list(state.current_cookies), auto_sentiment, min_likes, scrape_detail)
     )
     thread.daemon = True
     thread.start()

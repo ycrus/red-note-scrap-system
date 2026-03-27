@@ -12,6 +12,7 @@ export const Sidebar = ({ lang = "en",
   keywords, setKeywords, maxPosts, setMaxPosts,
   autoSentiment, setAutoSentiment, hfConfigured,
   scraping, onStartScrape,
+  minLikes, setMinLikes, scrapeDetail, setScrapeDetail,
   // Sentiment
   sentimentStatus, onSentimentAnalysisStarted,
   // Detail
@@ -68,6 +69,48 @@ export const Sidebar = ({ lang = "en",
           </label>
         </div>
         {!hfConfigured && <div style={{ fontSize: 10, color: "#ef4444", marginTop: 6 }}>⚠️ Add HUGGINGFACE_API_KEY to .env</div>}
+      </div>
+
+      {/* Min Likes Filter */}
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: 1 }}>
+            ❤️ Min Likes
+          </label>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#ff2442" }}>{minLikes > 0 ? minLikes.toLocaleString() : "All"}</span>
+        </div>
+        <input type="range" min={0} max={10000} step={100} value={minLikes}
+          onChange={e => setMinLikes(Number(e.target.value))}
+          disabled={scraping} style={{ width: "100%", background: "transparent", border: "none", cursor: "pointer" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+          <span style={{ fontSize: 10, color: "#475569" }}>0</span>
+          <span style={{ fontSize: 10, color: "#475569" }}>5k</span>
+          <span style={{ fontSize: 10, color: "#475569" }}>10k</span>
+        </div>
+        {minLikes > 0 && (
+          <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>
+            ⚠️ Only posts with ≥ {minLikes.toLocaleString()} likes
+          </div>
+        )}
+      </div>
+
+      {/* Auto Scrape Detail */}
+      <div className="card" style={{ padding: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0" }}>🔍 Auto Detail</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Scrape content, comments & images</div>
+          </div>
+          <label className="toggle">
+            <input type="checkbox" checked={scrapeDetail} onChange={e => setScrapeDetail(e.target.checked)} disabled={scraping} />
+            <span className="slider"></span>
+          </label>
+        </div>
+        {scrapeDetail && (
+          <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 6 }}>
+            ⚠️ ~30s per post — scraping will be slower
+          </div>
+        )}
       </div>
 
       <button className="btn btn-red" onClick={onStartScrape} disabled={scraping} style={{ width: "100%" }}>

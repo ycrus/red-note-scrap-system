@@ -23,6 +23,8 @@ export default function App() {
   const [keywords, setKeywords]     = useState("");
   const [maxPosts, setMaxPosts]     = useState(50);
   const [autoSentiment, setAutoSentiment] = useState(false);
+  const [minLikes, setMinLikes]         = useState(0);
+  const [scrapeDetail, setScrapeDetail] = useState(false);
   const [logs, setLogs]             = useState([]);
   const [results, setResults]       = useState([]);
   const [scraping, setScraping]     = useState(false);
@@ -107,7 +109,7 @@ export default function App() {
     setLogs([]); setResults([]); setScraping(true); setTab("logs");
 
     try {
-      await startScrape(kws, maxPosts, autoSentiment);
+      await startScrape(kws, maxPosts, autoSentiment, minLikes, scrapeDetail);
       subscribeToStream((item) => {
         setLogs(prev => [...prev, { type: "done", message: `✅ Done! ${item.total} results collected.`, time: new Date().toLocaleTimeString(), id: Date.now() }]);
         setScraping(false);
@@ -221,6 +223,8 @@ export default function App() {
           hfConfigured={hfConfigured}
           scraping={scraping}
           onStartScrape={handleStartScrape}
+          minLikes={minLikes} setMinLikes={setMinLikes}
+          scrapeDetail={scrapeDetail} setScrapeDetail={setScrapeDetail}
           sentimentStatus={sentimentStatus}
           onSentimentAnalysisStarted={() => setSentimentStatus(p => ({ ...p, is_analyzing: true }))}
           detailStatus={detailStatus}

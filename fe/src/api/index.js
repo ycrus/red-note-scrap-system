@@ -18,11 +18,11 @@ export const getStatus = () =>
 
 
 // ── SCRAPE ───────────────────────────────────────────
-export const startScrape = (keywords, maxPosts, autoSentiment) =>
+export const startScrape = (keywords, maxPosts, autoSentiment, minLikes, scrapeDetail) =>
   fetch(`${API}/api/scrape`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keywords, max_posts: maxPosts, auto_sentiment: autoSentiment })
+    body: JSON.stringify({ keywords, max_posts: maxPosts, auto_sentiment: autoSentiment, min_likes: minLikes, scrape_detail: scrapeDetail })
   }).then(r => r.json());
 
 export const createEventSource = () =>

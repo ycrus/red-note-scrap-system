@@ -148,7 +148,8 @@ def db_get_session_results(session_id):
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT id, keyword, title, link, author, likes, post_date,
-                   sentiment, sentiment_score, scraped_at
+                   sentiment, sentiment_score, scraped_at,
+                   bot_score, bot_label
             FROM results WHERE session_id = :sid ORDER BY scraped_at
         """), {"sid": session_id}).fetchall()
     return [{
@@ -156,6 +157,7 @@ def db_get_session_results(session_id):
         "author": r[4], "likes": r[5], "date": r[6],
         "sentiment": r[7], "sentiment_score": r[8],
         "scraped_at": r[9].isoformat() if r[9] else None,
+        "bot_score": r[10], "bot_label": r[11],
     } for r in rows]
 
 

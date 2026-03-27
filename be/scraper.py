@@ -10,52 +10,78 @@ from sentiment import analyze_sentiment
 
 
 # ── SEARCH SCRAPER ───────────────────────────────────
-def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
+def run_scraper(keywords, max_posts, cookies, auto_sentiment=False, min_likes=0, scrape_detail=False):
     state.scrape_results = []
     state.is_scraping = True
     session_id = db_save_session(keywords, max_posts)
     state.push_log(f"📦 Session #{session_id} created in database")
 
+    def parse_likes(likes_str):
+        """Convert likes string like '1.7万' or '1500' to int."""
+        if not likes_str:
+            return 0
+        try:
+            s = str(likes_str).strip().replace(',', '')
+            if '万' in s:
+                return int(float(s.replace('万', '')) * 10000)
+            if 'k' in s.lower():
+                return int(float(s.lower().replace('k', '')) * 1000)
+            return int(float(s))
+        except:
+            return 0
+
+    # Pakai persistent profile yang sama dengan browser_login.py
+    import os
+    user_data_dir = os.path.expanduser("~/.rednote_scraper_chromium")
+    os.makedirs(user_data_dir, exist_ok=True)
+
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
-                ]
-            )
-            context = browser.new_context(
+                ],
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1440, "height": 900},
-                java_script_enabled=True,
                 ignore_https_errors=True,
             )
-            # Sembunyikan tanda-tanda automation
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
                 Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN','zh','en']});
             """)
-            # Log cookies yang akan di-set
-            ws_check = next((c for c in cookies if c["name"] == "web_session"), None)
-            state.push_log(f"   Setting {len(cookies)} cookies, web_session: {'OK' if ws_check else 'MISSING'}")
 
-            context.add_cookies(cookies)
             page = context.new_page()
 
-            # Verifikasi cookies berhasil di-set
-            ctx_cookies = context.cookies(["https://www.rednote.com"])
-            web_session = next((c for c in ctx_cookies if c["name"] == "web_session"), None)
-            state.push_log(f"   Cookies in context: {len(ctx_cookies)}, web_session: {'OK' if web_session else 'MISSING'}")
-
-            # Visit homepage dulu agar cookies aktif
+            # Cek apakah sudah login via persistent profile
             page.goto("https://www.rednote.com")
             page.wait_for_load_state("networkidle")
             time.sleep(2)
             state.push_log(f"   Homepage URL: {page.url}")
+
+            # Kalau redirect ke login, coba inject cookies dari DB sebagai fallback
+            if "login" in page.url or "signin" in page.url:
+                state.push_log("   Not logged in via profile, injecting cookies from DB...")
+                ws_check = next((c for c in cookies if c["name"] == "web_session"), None)
+                state.push_log(f"   Setting {len(cookies)} cookies, web_session: {'OK' if ws_check else 'MISSING'}")
+                context.add_cookies(cookies)
+                page.reload()
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+                state.push_log(f"   After cookie inject URL: {page.url}")
+                if "login" in page.url:
+                    state.push_error("❌ Not logged in! Please login via browser first.")
+                    context.close()
+                    state.is_scraping = False
+                    state.push_done(0)
+                    return
+            else:
+                state.push_log("   ✅ Logged in via persistent profile")
 
             for keyword in keywords:
                 state.push_log(f"Scraping keyword: '{keyword}'...")
@@ -193,11 +219,34 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
                                     "sentiment": sentiment,
                                     "sentiment_score": score,
                                 }
+                                # Filter min_likes
+                                if min_likes > 0:
+                                    post_likes = parse_likes(likes)
+                                    if post_likes < min_likes:
+                                        continue
+
                                 db_id = db_save_result(session_id, row)
                                 row["id"] = db_id
                                 state.scrape_results.append(row)
                                 state.push_result(row)
                                 count += 1
+
+                                # Auto scrape detail jika diaktifkan
+                                if scrape_detail and db_id:
+                                    try:
+                                        post_url = row["link"]
+                                        state.push_log(f"   🔍 Detail: {title[:40]}...")
+                                        detail = scrape_post_detail(page, post_url)
+                                        if detail:
+                                            db_update_detail(db_id, detail)
+                                            if detail.get("comments"):
+                                                db_save_comments(db_id, detail["comments"])
+                                        # Kembali ke search page
+                                        page.goto(f"https://www.rednote.com/search_result?keyword={keyword}&type=51")
+                                        page.wait_for_load_state("networkidle")
+                                        time.sleep(random.uniform(2, 3))
+                                    except Exception as de:
+                                        state.push_log(f"   ⚠️ Detail error: {str(de)[:60]}")
 
                             except:
                                 continue
@@ -237,7 +286,7 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
                 except Exception as e:
                     state.push_error(f"❌ Error on '{keyword}': {str(e)}")
 
-            browser.close()
+            context.close()
 
     except Exception as e:
         state.push_error(f"❌ Browser error: {str(e)}")
@@ -251,123 +300,195 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False):
 def scrape_post_detail(page, url):
     """Visit a post page and extract full content, comments, images, tags."""
     try:
+        # Konversi /search_result/ ke /explore/ agar komentar muncul
+        # JAGA xsec_token — jangan hapus query params!
+        import re
+        url = re.sub(r'/search_result/', '/explore/', url)
         page.goto(url, timeout=60000)
         page.wait_for_load_state("domcontentloaded")
         time.sleep(random.uniform(3, 5))
 
-        if "login" in page.url:
+        if "login" in page.url or "signin" in page.url:
             return None
+
+        # Cek apakah post tersedia (300031 = not found/private)
+        try:
+            error_code = page.locator("[class*='error-code'], [class*='errorCode']").first.inner_text(timeout=2000)
+            if error_code and "300031" in error_code:
+                state.push_log(f"      ⚠️ Post tidak tersedia (300031): {url}")
+                return None
+        except:
+            pass
+
+        # Cek via JS apakah ada error state
+        try:
+            has_error = page.evaluate("""() => {
+                const body = document.body.innerText;
+                return body.includes('300031') || body.includes('该内容已被删除') || body.includes('内容不存在');
+            }""")
+            if has_error:
+                state.push_log(f"      ⚠️ Post tidak tersedia: {url}")
+                return None
+        except:
+            pass
 
         detail = {}
 
-        # Content
-        for selector in ["#detail-desc span", ".desc span", ".content span", "[class*='desc'] span", "article span"]:
-            try:
-                text = page.locator(selector).first.inner_text(timeout=3000).strip()
-                if text and len(text) > 5:
-                    detail["content"] = text
-                    break
-            except:
-                continue
-        detail.setdefault("content", None)
-
-        # Comments count
-        for selector in [".count-text", ".comment-count", "[class*='comment'] span", "[class*='chat'] span"]:
-            try:
-                text = page.locator(selector).first.inner_text(timeout=2000).strip()
-                if text:
-                    detail["comments_count"] = text
-                    break
-            except:
-                continue
-        detail.setdefault("comments_count", None)
-
-        # Images
+        # Deteksi apakah post adalah video
+        is_video = False
+        video_url = None
         try:
-            imgs = page.locator(".swiper-slide img, .note-image img, [class*='slide'] img").all()
-            detail["images"] = [img.get_attribute("src") for img in imgs[:9] if img.get_attribute("src")]
+            # Cek apakah ada video player
+            video_el = page.locator("video").first
+            video_el.wait_for(timeout=3000)
+            is_video = True
+            # Ambil src dari video atau source element
+            video_url = video_el.get_attribute("src")
+            if not video_url:
+                source_el = page.locator("video source").first
+                video_url = source_el.get_attribute("src")
+            # Kalau masih kosong, cari dari network request via JS
+            if not video_url:
+                video_url = page.evaluate("""() => {
+                    const v = document.querySelector('video');
+                    if (v) return v.currentSrc || v.src || null;
+                    return null;
+                }""")
+        except:
+            pass
+
+        detail["is_video"] = is_video
+        detail["video_url"] = video_url
+
+        # Content — ambil semua teks dari #detail-desc, gabungkan
+        try:
+            spans = page.locator("#detail-desc .note-text span").all()
+            parts = []
+            for sp in spans:
+                try:
+                    t = sp.inner_text(timeout=1000).strip()
+                    if t: parts.append(t)
+                except: pass
+            content_text = " ".join(parts).strip() if parts else None
+            if not content_text:
+                # Fallback
+                content_text = page.locator("#detail-desc").first.inner_text(timeout=3000).strip()
+            detail["content"] = content_text or None
+        except:
+            detail["content"] = None
+
+        # Comments count — dari total text di comments section
+        try:
+            total_text = page.locator(".comments-el .total").first.inner_text(timeout=2000).strip()
+            detail["comments_count"] = total_text  # e.g. "共 10 条评论"
+        except:
+            detail["comments_count"] = None
+
+        # Images — dari swiper slides, skip duplicate
+        try:
+            seen_srcs = set()
+            imgs = []
+            for img in page.locator(".swiper-slide:not(.swiper-slide-duplicate) img").all():
+                src = img.get_attribute("src")
+                if src and src not in seen_srcs and "avatar" not in src:
+                    seen_srcs.add(src)
+                    imgs.append(src)
+            detail["images"] = imgs[:9]
         except:
             detail["images"] = []
 
-        # Tags
+        # Tags — dari #detail-desc a.tag
         try:
             tags = []
-            for t in page.locator("a[href*='search'] span, .tag, [class*='tag']").all()[:10]:
+            for a in page.locator("#detail-desc a.tag").all()[:15]:
                 try:
-                    txt = t.inner_text(timeout=1000).strip()
-                    if txt and (txt.startswith("#") or len(txt) < 30):
-                        tags.append(txt)
-                except:
-                    continue
-            detail["tags"] = list(set(tags))
+                    txt = a.inner_text(timeout=1000).strip()
+                    if txt: tags.append(txt)
+                except: pass
+            detail["tags"] = tags
         except:
             detail["tags"] = []
 
-        # Comments — scroll comment section to load more
+        # Comments + Replies — scroll to load
         comments = []
         try:
-            # Scroll down to trigger comment load
-            for _ in range(3):
+            for _ in range(4):
                 page.mouse.wheel(0, 3000)
                 time.sleep(1)
 
-            # Try various comment container selectors
-            comment_items = []
-            for sel in [
-                ".comment-item",
-                "[class*='comment-item']",
-                "[class*='commentItem']",
-                ".parent-comment",
-                "[class*='parent-comment']",
-            ]:
+            def get_comment_fields(item):
+                """Extract username, text, likes, date from a comment-item element."""
+                username = None
                 try:
-                    comment_items = page.locator(sel).all()
-                    if comment_items:
-                        break
-                except:
-                    continue
+                    username = item.locator("a.name").first.inner_text(timeout=1000).strip()
+                except: pass
 
-            for item in comment_items[:30]:
+                comment_text = None
                 try:
-                    # Username
-                    username = None
-                    for usel in [".author-wrapper .name", "[class*='author'] span", "[class*='nickname']", "[class*='username']"]:
+                    # Ambil semua teks dari note-text, skip emoji
+                    spans = item.locator(".note-text span").all()
+                    parts = []
+                    for sp in spans:
                         try:
-                            username = item.locator(usel).first.inner_text(timeout=1000).strip()
-                            if username: break
-                        except: continue
+                            t = sp.inner_text(timeout=500).strip()
+                            if t: parts.append(t)
+                        except: pass
+                    comment_text = " ".join(parts) if parts else None
+                except: pass
 
-                    # Comment text
-                    comment_text = None
-                    for csel in [".note-text span", "[class*='note-text'] span", "[class*='content'] span", "span[class*='text']"]:
-                        try:
-                            comment_text = item.locator(csel).first.inner_text(timeout=1000).strip()
-                            if comment_text: break
-                        except: continue
+                likes = None
+                try:
+                    likes = item.locator(".like-wrapper .count").first.inner_text(timeout=500).strip()
+                    if likes in ["赞", "like"]: likes = "0"
+                except: pass
 
-                    # Likes on comment
-                    likes = None
-                    for lsel in ["[class*='like'] span", ".count", "[class*='count']"]:
-                        try:
-                            likes = item.locator(lsel).first.inner_text(timeout=1000).strip()
-                            if likes: break
-                        except: continue
+                posted_at = None
+                try:
+                    date_text = item.locator(".date span").first.inner_text(timeout=500).strip()
+                    location = ""
+                    try:
+                        location = item.locator(".location").first.inner_text(timeout=500).strip()
+                    except: pass
+                    posted_at = f"{date_text} {location}".strip() if date_text else None
+                except: pass
 
-                    # Date
-                    posted_at = None
-                    for dsel in ["[class*='time']", "[class*='date']"]:
-                        try:
-                            posted_at = item.locator(dsel).first.inner_text(timeout=1000).strip()
-                            if posted_at: break
-                        except: continue
+                return username, comment_text, likes, posted_at
 
-                    if comment_text and len(comment_text) > 1:
+            # Cari semua parent-comment containers
+            parent_containers = page.locator(".parent-comment").all()
+
+            for container in parent_containers[:30]:
+                try:
+                    # Parent comment — comment-item tapi BUKAN comment-item-sub
+                    parent_item = container.locator(".comment-item:not(.comment-item-sub)").first
+                    username, comment_text, likes, posted_at = get_comment_fields(parent_item)
+
+                    if comment_text and len(comment_text) > 0:
                         comments.append({
                             "username": username,
                             "content": comment_text,
                             "likes": likes,
                             "posted_at": posted_at,
+                            "parent_username": None,
+                            "is_reply": False,
                         })
+                        parent_username = username
+
+                        # Replies — comment-item-sub di dalam reply-container
+                        reply_items = container.locator(".reply-container .comment-item-sub").all()
+                        for reply in reply_items[:10]:
+                            try:
+                                ru, rt, rl, rd = get_comment_fields(reply)
+                                if rt and len(rt) > 0:
+                                    comments.append({
+                                        "username": ru,
+                                        "content": rt,
+                                        "likes": rl,
+                                        "posted_at": rd,
+                                        "parent_username": parent_username,
+                                        "is_reply": True,
+                                    })
+                            except: continue
                 except:
                     continue
 
@@ -384,31 +505,49 @@ def scrape_post_detail(page, url):
 
 def run_detail_scraper(result_ids, cookies):
     """Open browser and scrape details for a list of result IDs."""
+    import os
+    user_data_dir = os.path.expanduser("~/.rednote_scraper_chromium")
+    os.makedirs(user_data_dir, exist_ok=True)
+
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
+            # Pakai persistent profile agar tidak perlu login ulang
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
-                ]
-            )
-            context = browser.new_context(
+                ],
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1440, "height": 900},
-                java_script_enabled=True,
                 ignore_https_errors=True,
             )
-            # Sembunyikan tanda-tanda automation
             context.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3]});
                 Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN','zh','en']});
             """)
-            context.add_cookies(cookies)
             page = context.new_page()
+
+            # Cek login status
+            page.goto("https://www.rednote.com")
+            page.wait_for_load_state("networkidle")
+            time.sleep(2)
+            if "login" in page.url or "signin" in page.url:
+                # Fallback inject cookies
+                context.add_cookies(cookies)
+                page.reload()
+                page.wait_for_load_state("networkidle")
+                time.sleep(2)
+                if "login" in page.url:
+                    state.push_error("❌ Not logged in! Please login via browser first.")
+                    context.close()
+                    state.push_done(0)
+                    state.is_scraping = False
+                    return
 
             from database import engine
             from sqlalchemy import text
@@ -419,20 +558,29 @@ def run_detail_scraper(result_ids, cookies):
                 """), {"ids": result_ids}).fetchall()
 
             state.push_log(f"🔍 Fetching details for {len(rows)} posts...")
+            done = 0
 
             for i, (row_id, link) in enumerate(rows):
                 state.push_log(f"   [{i+1}/{len(rows)}] {link[:60]}...")
-                detail = scrape_post_detail(page, link)
-                if detail:
+                try:
+                    detail = scrape_post_detail(page, link)
+                    if detail is None:
+                        state.push_log(f"      ⏭ Skipped (unavailable)")
+                        continue
                     db_update_detail(row_id, detail)
                     if detail.get("comments"):
                         db_save_comments(row_id, detail["comments"])
-                        state.push_log(f"      💬 {len(detail['comments'])} comments saved")
-                time.sleep(random.uniform(3, 6))
+                        state.push_log(f"      💬 {len(detail['comments'])} comments")
+                    if detail.get("content"):
+                        state.push_log(f"      📝 Content: {detail['content'][:50]}...")
+                    done += 1
+                except Exception as pe:
+                    state.push_log(f"      ⚠️ Error: {str(pe)[:60]}")
+                time.sleep(random.uniform(2, 4))
 
-            browser.close()
-            state.push_log(f"✅ Detail scraping done: {len(rows)} posts updated")
-            state.push_done(len(rows))
+            context.close()
+            state.push_log(f"✅ Detail scraping done: {done}/{len(rows)} posts updated")
+            state.push_done(done)
 
     except Exception as e:
         state.push_error(f"❌ Detail scraper error: {str(e)}")
