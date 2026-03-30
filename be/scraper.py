@@ -334,28 +334,64 @@ def scrape_post_detail(page, url):
 
         detail = {}
 
-        # Deteksi apakah post adalah video
+        # Deteksi video — intercept network requests untuk dapat CDN URL
         is_video = False
         video_url = None
+        captured_video_urls = []
+
+        def capture_video_request(request):
+            url = request.url
+            # Tangkap URL video CDN (bukan blob)
+            if any(cdn in url for cdn in ['rednotecdn.com', 'xhscdn.com', 'xiaohongshu.com']):
+                if any(ext in url.lower() for ext in ['.mp4', '.m3u8', '.ts', 'video', 'stream']):
+                    captured_video_urls.append(url)
+
+        page.on("request", capture_video_request)
+
         try:
-            # Cek apakah ada video player
             video_el = page.locator("video").first
-            video_el.wait_for(timeout=3000)
+            video_el.wait_for(timeout=4000)
             is_video = True
-            # Ambil src dari video atau source element
-            video_url = video_el.get_attribute("src")
-            if not video_url:
-                source_el = page.locator("video source").first
-                video_url = source_el.get_attribute("src")
-            # Kalau masih kosong, cari dari network request via JS
-            if not video_url:
+
+            # Trigger video load dengan click play
+            try:
+                page.locator("video").first.click()
+                time.sleep(2)
+            except:
+                pass
+
+            # Cek captured network requests
+            if captured_video_urls:
+                # Prefer mp4 over m3u8
+                mp4s = [u for u in captured_video_urls if '.mp4' in u.lower()]
+                video_url = mp4s[0] if mp4s else captured_video_urls[0]
+            
+            # Fallback: coba evaluate currentSrc setelah play
+            if not video_url or video_url.startswith('blob:'):
                 video_url = page.evaluate("""() => {
                     const v = document.querySelector('video');
-                    if (v) return v.currentSrc || v.src || null;
+                    if (!v) return null;
+                    // Coba ambil dari source element
+                    const sources = v.querySelectorAll('source');
+                    for (const s of sources) {
+                        if (s.src && !s.src.startsWith('blob:')) return s.src;
+                    }
+                    // currentSrc kalau bukan blob
+                    if (v.currentSrc && !v.currentSrc.startsWith('blob:')) return v.currentSrc;
                     return null;
                 }""")
+
         except:
             pass
+        finally:
+            try:
+                page.remove_listener("request", capture_video_request)
+            except:
+                pass
+
+        # Bersihkan blob URL
+        if video_url and video_url.startswith('blob:'):
+            video_url = None
 
         detail["is_video"] = is_video
         detail["video_url"] = video_url
