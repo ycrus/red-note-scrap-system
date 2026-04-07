@@ -36,6 +36,7 @@ export default function App() {
 
   // ── HF state ──────────────────────────────────────
   const [hfConfigured, setHfConfigured]   = useState(false);
+  const [scraperProvider, setScraperProvider] = useState("playwright");
   const [sentimentStatus, setSentimentStatus] = useState({ analyzed: 0, total: 0, pending: 0, is_analyzing: false });
 
   // ── History state ─────────────────────────────────
@@ -59,11 +60,19 @@ export default function App() {
   const esRef = useRef(null);
 
   const handleChangeLang = (code) => { setLang(code); setLangState(code); };
+  const handleProviderChange = (p) => setScraperProvider(p);
 
   // ── Init ──────────────────────────────────────────
   useEffect(() => {
     getCookies().then(d => { if (d.count > 0) { setCookieKeys(d.keys); setCookieStatus("ok"); } }).catch(() => {});
-    getStatus().then(d => setHfConfigured(d.hf_configured || false)).catch(() => {});
+    getStatus().then(d => {
+      setHfConfigured(d.hf_configured || false);
+      setScraperProvider(d.scraper_provider || "playwright");
+    }).catch(() => {});
+    fetch("http://localhost:5001/api/provider")
+      .then(r => r.json())
+      .then(d => setScraperProvider(d.provider || "playwright"))
+      .catch(() => {});
     getSentimentStatus().then(setSentimentStatus).catch(() => {});
     getHistory().then(setHistory).catch(() => {});
     getDetailStatus().then(setDetailStatus).catch(() => {});
@@ -210,6 +219,8 @@ export default function App() {
         cookieStatus={cookieStatus}
         cookieKeys={cookieKeys}
         scraping={scraping}
+        scraperProvider={scraperProvider}
+        onProviderChange={handleProviderChange}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", minHeight: "calc(100vh - 57px)" }}>

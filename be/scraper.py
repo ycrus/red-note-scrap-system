@@ -304,6 +304,16 @@ def scrape_post_detail(page, url):
         # JAGA xsec_token — jangan hapus query params!
         import re
         url = re.sub(r'/search_result/', '/explore/', url)
+        # Setup video capture SEBELUM navigate agar tidak miss request
+        captured_video_urls = []
+        def capture_video_request(request):
+            u = request.url
+            if any(cdn in u for cdn in ['rednotecdn.com', 'xhscdn.com']):
+                if any(ext in u.lower() for ext in ['.mp4', '.m3u8', 'stream']):
+                    if not u.startswith('blob:'):
+                        captured_video_urls.append(u)
+        page.on("request", capture_video_request)
+
         page.goto(url, timeout=60000)
         page.wait_for_load_state("domcontentloaded")
         time.sleep(random.uniform(3, 5))
@@ -334,64 +344,27 @@ def scrape_post_detail(page, url):
 
         detail = {}
 
-        # Deteksi video — intercept network requests untuk dapat CDN URL
+        # Deteksi video dari captured network requests (sudah di-capture sejak goto)
         is_video = False
         video_url = None
-        captured_video_urls = []
-
-        def capture_video_request(request):
-            url = request.url
-            # Tangkap URL video CDN (bukan blob)
-            if any(cdn in url for cdn in ['rednotecdn.com', 'xhscdn.com', 'xiaohongshu.com']):
-                if any(ext in url.lower() for ext in ['.mp4', '.m3u8', '.ts', 'video', 'stream']):
-                    captured_video_urls.append(url)
-
-        page.on("request", capture_video_request)
 
         try:
-            video_el = page.locator("video").first
-            video_el.wait_for(timeout=4000)
+            # Cek apakah ada video element
+            page.locator("video").first.wait_for(timeout=3000)
             is_video = True
-
-            # Trigger video load dengan click play
-            try:
-                page.locator("video").first.click()
-                time.sleep(2)
-            except:
-                pass
-
-            # Cek captured network requests
-            if captured_video_urls:
-                # Prefer mp4 over m3u8
-                mp4s = [u for u in captured_video_urls if '.mp4' in u.lower()]
-                video_url = mp4s[0] if mp4s else captured_video_urls[0]
-            
-            # Fallback: coba evaluate currentSrc setelah play
-            if not video_url or video_url.startswith('blob:'):
-                video_url = page.evaluate("""() => {
-                    const v = document.querySelector('video');
-                    if (!v) return null;
-                    // Coba ambil dari source element
-                    const sources = v.querySelectorAll('source');
-                    for (const s of sources) {
-                        if (s.src && !s.src.startsWith('blob:')) return s.src;
-                    }
-                    // currentSrc kalau bukan blob
-                    if (v.currentSrc && !v.currentSrc.startsWith('blob:')) return v.currentSrc;
-                    return null;
-                }""")
-
         except:
             pass
-        finally:
-            try:
-                page.remove_listener("request", capture_video_request)
-            except:
-                pass
 
-        # Bersihkan blob URL
-        if video_url and video_url.startswith('blob:'):
-            video_url = None
+        # Ambil URL dari captured requests
+        if captured_video_urls:
+            mp4s = [u for u in captured_video_urls if '.mp4' in u.lower()]
+            video_url = mp4s[0] if mp4s else captured_video_urls[0]
+
+        # Cleanup listener
+        try:
+            page.remove_listener("request", capture_video_request)
+        except:
+            pass
 
         detail["is_video"] = is_video
         detail["video_url"] = video_url
@@ -420,15 +393,28 @@ def scrape_post_detail(page, url):
         except:
             detail["comments_count"] = None
 
-        # Images — dari swiper slides, skip duplicate
+        # Images — skip duplicate swiper slides dan avatar
         try:
             seen_srcs = set()
             imgs = []
-            for img in page.locator(".swiper-slide:not(.swiper-slide-duplicate) img").all():
+            for img in page.locator("img").all():
                 src = img.get_attribute("src")
-                if src and src not in seen_srcs and "avatar" not in src:
-                    seen_srcs.add(src)
-                    imgs.append(src)
+                if not src:
+                    continue
+                # Skip avatar, emoji, icon
+                if any(x in src for x in ["avatar", "emoji", "picasso", "icon"]):
+                    continue
+                # Skip blob URL
+                if src.startswith("blob:") or src.startswith("data:"):
+                    continue
+                # Skip duplicate
+                if src in seen_srcs:
+                    continue
+                # Hanya CDN RedNote
+                if not any(cdn in src for cdn in ["rednotecdn.com", "xhscdn.com", "sns-web", "sns-img"]):
+                    continue
+                seen_srcs.add(src)
+                imgs.append(src)
             detail["images"] = imgs[:9]
         except:
             detail["images"] = []

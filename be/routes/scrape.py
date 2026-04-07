@@ -3,6 +3,15 @@ import threading
 import json
 import state
 from scraper import run_scraper, run_detail_scraper
+import os
+
+def get_scraper():
+    """Return scraper function based on SCRAPER_PROVIDER env var."""
+    provider = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
+    if provider == "apify":
+        from apify_scraper import run_apify_scraper
+        return run_apify_scraper, provider
+    return run_scraper, provider
 from database import db_get_undetailed_ids, db_detail_scrape_status, db_load_cookies, db_save_cookies
 from state import parse_cookie_string, clear_queue
 
@@ -83,11 +92,20 @@ def start_scrape():
     if not keywords:
         return jsonify({"error": "No keywords provided"}), 400
 
+    scraper_fn, provider = get_scraper()
+    state.push_log(f"   Provider: {provider}")
+
     clear_queue()
-    thread = threading.Thread(
-        target=run_scraper,
-        args=(keywords, max_posts, list(state.current_cookies), auto_sentiment, min_likes, scrape_detail)
-    )
+    if provider == "apify":
+        thread = threading.Thread(
+            target=scraper_fn,
+            args=(keywords, max_posts, auto_sentiment, min_likes)
+        )
+    else:
+        thread = threading.Thread(
+            target=scraper_fn,
+            args=(keywords, max_posts, list(state.current_cookies), auto_sentiment, min_likes, scrape_detail)
+        )
     thread.daemon = True
     thread.start()
     return jsonify({"status": "started", "keywords": keywords})
@@ -149,10 +167,34 @@ def get_results():
 @scrape_bp.route("/api/status")
 def status():
     from sentiment import is_configured
+    provider = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
     return jsonify({
         "is_scraping": state.is_scraping,
         "is_analyzing": state.is_analyzing,
         "total_results": len(state.scrape_results),
         "cookies_loaded": len(state.current_cookies),
         "hf_configured": is_configured(),
+        "scraper_provider": provider,
     })
+
+
+@scrape_bp.route("/api/provider", methods=["GET"])
+def get_provider():
+    provider = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
+    from apify_scraper import is_configured as apify_ok, APIFY_ACTOR_ID
+    return jsonify({
+        "provider": provider,
+        "apify_configured": apify_ok(),
+        "apify_actor": APIFY_ACTOR_ID,
+    })
+
+
+@scrape_bp.route("/api/provider", methods=["POST"])
+def set_provider():
+    """Switch scraper provider at runtime (updates os.environ, not .env file)."""
+    body = request.json or {}
+    provider = body.get("provider", "playwright").lower()
+    if provider not in ("playwright", "apify"):
+        return jsonify({"error": "Invalid provider. Use 'playwright' or 'apify'"}), 400
+    os.environ["SCRAPER_PROVIDER"] = provider
+    return jsonify({"status": "ok", "provider": provider})

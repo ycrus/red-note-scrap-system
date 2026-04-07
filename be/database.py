@@ -166,7 +166,7 @@ def db_get_result_detail(result_id):
         row = conn.execute(text("""
             SELECT id, keyword, title, link, author, likes, post_date,
                    sentiment, sentiment_score, content, comments_count,
-                   images, tags, detail_scraped, scraped_at
+                   images, tags, detail_scraped, scraped_at, video_url
             FROM results WHERE id = :id
         """), {"id": result_id}).fetchone()
     if not row:
@@ -189,6 +189,7 @@ def db_get_result_detail(result_id):
         "images": row[11] or [], "tags": row[12] or [],
         "detail_scraped": row[13],
         "scraped_at": row[14].isoformat() if row[14] else None,
+        "video_url": row[15],
         "comments": comments,
     }
 
