@@ -9,6 +9,7 @@ import { HistoryTab } from "./components/tabs/HistoryTab";
 import { DashboardTab } from "./components/tabs/DashboardTab";
 import { TrendingTab } from "./components/tabs/TrendingTab";
 import { SemanticSearchTab } from "./components/tabs/SemanticSearchTab";
+import { CIBTab } from "./components/tabs/CIBTab";
 import { PostDetailModal } from "./components/ui/PostDetailModal";
 import {
   getCookies, getStatus, startScrape, createEventSource,
@@ -178,6 +179,7 @@ export default function App() {
     dashboard: t("tabDashboard", lang),
     trending:  t("tabTrending", lang),
     search:    "🔎 Semantic Search",
+    cib:       "🛡 CIB",
   }[tab]);
 
   return (
@@ -250,7 +252,7 @@ export default function App() {
           {/* Tab bar */}
           <div style={{ padding: "10px 20px", borderBottom: "1px solid #2d3748", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 5 }}>
-              {["logs", "results", "history", "dashboard", "trending", "search"].map(t => (
+              {["logs", "results", "history", "dashboard", "trending", "search", "cib"].map(t => (
                 <button key={t} className={`tab ${tab === t ? "active" : ""}`}
                   onClick={() => { setTab(t); if (t === "history") getHistory().then(setHistory).catch(() => {}); if (t === "dashboard") fetchDashboard(); }}>
                   {tabLabel(t)}
@@ -264,6 +266,7 @@ export default function App() {
           {tab === "results"   && <ResultsTab results={results} onOpenDetail={handleOpenDetail} lang={lang} />}
           {tab === "history"   && <HistoryTab history={history} onOpenDetail={handleOpenDetail} lang={lang} />}
           {tab === "search" && <SemanticSearchTab lang={lang} />}
+          {tab === "cib" && <CIBTab lang={lang} />}
           {tab === "trending" && (
             <TrendingTab
               scraping={scraping}

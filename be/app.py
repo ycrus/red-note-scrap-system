@@ -6,7 +6,7 @@ import os
 load_dotenv()
 
 from database import init_db
-from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp
+from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp, cib_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -20,6 +20,7 @@ app.register_blueprint(trending_bp)
 app.register_blueprint(embed_bp)
 app.register_blueprint(image_bp)
 app.register_blueprint(video_bp)
+app.register_blueprint(cib_bp)
 
 
 if __name__ == "__main__":
@@ -27,10 +28,12 @@ if __name__ == "__main__":
 
     # Init pgvector embedding column
     try:
-        from embedder import init_embedding_column
-        init_embedding_column()
         from image_downloader import init_images_table
         init_images_table()
+        from coordinated_detector import init_coordinated_tables
+        init_coordinated_tables()
+    except Exception as e:
+        print(f"CIB table init warning: {e}")
     except Exception as e:
         print(f"Image table init warning: {e}")
     except Exception as e:

@@ -595,6 +595,35 @@ def run_detail_scraper(result_ids, cookies):
                         state.push_log(f"      💬 {len(detail['comments'])} comments")
                     if detail.get("content"):
                         state.push_log(f"      📝 Content: {detail['content'][:50]}...")
+
+                    # Auto-embed setelah detail tersimpan
+                    try:
+                        from embedder import get_model, EMBED_DIM
+                        from database import engine
+                        from sqlalchemy import text as sqtext
+                        model = get_model()
+                        if model:
+                            # Embed gabungan title + content untuk representasi lebih kaya
+                            with engine.connect() as conn:
+                                row_data = conn.execute(sqtext(
+                                    "SELECT title, content FROM results WHERE id = :id"
+                                ), {"id": row_id}).fetchone()
+                            if row_data:
+                                title = row_data[0] or ""
+                                content_text = row_data[1] or ""
+                                text_to_embed = f"{title} {content_text}".strip()[:512]
+                                if text_to_embed:
+                                    emb = model.encode(text_to_embed, normalize_embeddings=True).tolist()
+                                    if len(emb) == EMBED_DIM:
+                                        with engine.connect() as conn:
+                                            conn.execute(sqtext(
+                                                "UPDATE results SET embedding = :emb WHERE id = :id"
+                                            ), {"emb": str(emb), "id": row_id})
+                                            conn.commit()
+                                        state.push_log(f"      🧠 Embedded (title+content)")
+                    except Exception as ee:
+                        state.push_log(f"      ⚠️ Embed error: {str(ee)[:50]}")
+
                     done += 1
                 except Exception as pe:
                     state.push_log(f"      ⚠️ Error: {str(pe)[:60]}")
