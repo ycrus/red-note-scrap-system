@@ -6,7 +6,7 @@ import os
 load_dotenv()
 
 from database import init_db
-from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp, cib_bp
+from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp, cib_bp, framing_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -21,6 +21,7 @@ app.register_blueprint(embed_bp)
 app.register_blueprint(image_bp)
 app.register_blueprint(video_bp)
 app.register_blueprint(cib_bp)
+app.register_blueprint(framing_bp)
 
 
 if __name__ == "__main__":
