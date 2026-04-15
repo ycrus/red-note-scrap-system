@@ -13,6 +13,7 @@ export const Sidebar = ({ lang = "en",
   autoSentiment, setAutoSentiment, hfConfigured,
   scraping, onStartScrape,
   minLikes, setMinLikes, scrapeDetail, setScrapeDetail,
+  scraperProvider = "playwright",
   // Sentiment
   sentimentStatus, onSentimentAnalysisStarted,
   // Detail
@@ -30,7 +31,18 @@ export const Sidebar = ({ lang = "en",
   return (
     <div style={{ borderRight: "1px solid #2d3748", padding: 20, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
 
-      <CookiePanel cookieStatus={cookieStatus} cookieKeys={cookieKeys} onCookiesSaved={onCookiesSaved} lang={lang} />
+      {scraperProvider === "apify" ? (
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+            ⚡ Apify Mode
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+            Scraping via Apify cloud — no login required. Switch to 🎭 Playwright in header to use cookies.
+          </div>
+        </div>
+      ) : (
+        <CookiePanel cookieStatus={cookieStatus} cookieKeys={cookieKeys} onCookiesSaved={onCookiesSaved} lang={lang} />
+      )}
 
       {/* Keywords */}
       <div>

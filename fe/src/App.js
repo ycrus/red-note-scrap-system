@@ -113,7 +113,7 @@ export default function App() {
 
   // ── Handlers ──────────────────────────────────────
   const handleStartScrape = async () => {
-    if (cookieStatus !== "ok") return alert("Please set cookies first!");
+    if (scraperProvider !== "apify" && cookieStatus !== "ok") return alert("Please set cookies first!");
     const kws = keywords.split("\n").map(k => k.trim()).filter(Boolean);
     if (!kws.length) return alert("Please enter at least one keyword.");
 
@@ -240,6 +240,7 @@ export default function App() {
           onStartScrape={handleStartScrape}
           minLikes={minLikes} setMinLikes={setMinLikes}
           scrapeDetail={scrapeDetail} setScrapeDetail={setScrapeDetail}
+          scraperProvider={scraperProvider}
           sentimentStatus={sentimentStatus}
           onSentimentAnalysisStarted={() => setSentimentStatus(p => ({ ...p, is_analyzing: true }))}
           detailStatus={detailStatus}

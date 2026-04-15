@@ -79,7 +79,9 @@ def reload_cookies():
 def start_scrape():
     if state.is_scraping:
         return jsonify({"error": "Scraping already in progress"}), 400
-    if not state.current_cookies:
+
+    provider = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
+    if provider != "apify" and not state.current_cookies:
         return jsonify({"error": "No cookies set!"}), 400
 
     body = request.json or {}
