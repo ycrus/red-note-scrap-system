@@ -9,6 +9,8 @@ from .image import image_bp
 from .video import video_bp
 from .cib import cib_bp
 from .framing import framing_bp
+from .velocity import velocity_bp
 
 __all__ = ["scrape_bp", "sentiment_bp", "history_bp", "analytics_bp", "bot_bp",
-           "trending_bp", "embed_bp", "image_bp", "video_bp", "cib_bp", "framing_bp"]
+           "trending_bp", "embed_bp", "image_bp", "video_bp", "cib_bp",
+           "framing_bp", "velocity_bp"]

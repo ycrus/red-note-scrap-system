@@ -78,7 +78,7 @@ export const CIBTab = ({ lang = "en" }) => {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+      {/* <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
         {[
           { label: "Total events",  value: stats.total_events, color: "#e2e8f0" },
           { label: "HIGH severity", value: highEvents.length,  color: "#ef4444" },
@@ -90,7 +90,7 @@ export const CIBTab = ({ lang = "en" }) => {
             <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{s.label}</div>
           </div>
         ))}
-      </div>
+      </div> */}
 
       {/* Run controls */}
       <div className="card" style={{ padding: 14, marginBottom: 20 }}>
@@ -160,11 +160,11 @@ export const CIBTab = ({ lang = "en" }) => {
                         <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>
                           {TYPE_LABEL[ev.event_type] || ev.event_type}
                         </span>
-                        <span style={{
+                        {/* <span style={{
                           fontSize: 9, padding: "2px 8px", borderRadius: 10,
                           background: SEVERITY_BG[sev], color: SEVERITY_COLOR[sev],
                           fontWeight: 700, textTransform: "uppercase"
-                        }}>{sev}</span>
+                        }}>{sev}</span> */}
                       </div>
                       <span style={{ fontSize: 10, color: "#475569" }}>
                         {ev.detected_at ? new Date(ev.detected_at).toLocaleString() : ""}

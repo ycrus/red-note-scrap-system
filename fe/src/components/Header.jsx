@@ -62,7 +62,7 @@ export const Header = ({ hfConfigured, cookieStatus, cookieKeys, scraping, scrap
         <Badge ok={hfConfigured} label={hfConfigured ? "HF Connected" : "No HF Key"} />
 
         {/* Provider toggle badge — clickable */}
-        <div
+        {/* <div
           onClick={handleProviderToggle}
           title={`Click to switch to ${isApify ? "Playwright" : "Apify"}`}
           style={{
@@ -84,7 +84,7 @@ export const Header = ({ hfConfigured, cookieStatus, cookieKeys, scraping, scrap
           <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 2 }}>
             {scraping ? "" : "↕"}
           </span>
-        </div>
+        </div> */}
 
         {/* Cookie status — hanya tampil saat Playwright */}
         {!isApify && (

@@ -6,7 +6,7 @@ import os
 load_dotenv()
 
 from database import init_db
-from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp, cib_bp, framing_bp
+from routes import scrape_bp, sentiment_bp, history_bp, analytics_bp, bot_bp, trending_bp, embed_bp, image_bp, video_bp, cib_bp, framing_bp, velocity_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -22,23 +22,41 @@ app.register_blueprint(image_bp)
 app.register_blueprint(video_bp)
 app.register_blueprint(cib_bp)
 app.register_blueprint(framing_bp)
+app.register_blueprint(velocity_bp)
 
 
 if __name__ == "__main__":
     init_db()
 
-    # Init pgvector embedding column
+    try:
+        from embedder import init_embedding_column
+        init_embedding_column()
+    except Exception as e:
+        print(f"Embedding init warning: {e}")
+
     try:
         from image_downloader import init_images_table
         init_images_table()
+    except Exception as e:
+        print(f"Image table init warning: {e}")
+
+    try:
         from coordinated_detector import init_coordinated_tables
         init_coordinated_tables()
     except Exception as e:
         print(f"CIB table init warning: {e}")
+
+    try:
+        from framing_classifier import init_framing_table
+        init_framing_table()
     except Exception as e:
-        print(f"Image table init warning: {e}")
+        print(f"Framing table init warning: {e}")
+
+    try:
+        from velocity_detector import init_spike_table
+        init_spike_table()
     except Exception as e:
-        print(f"Embedding init warning: {e}")
+        print(f"Velocity table init warning: {e}")
 
     # Auto-load cookies from DB on startup
     try:
