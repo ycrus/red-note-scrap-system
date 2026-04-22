@@ -14,6 +14,8 @@ export const Sidebar = ({ lang = "en",
   scraping, onStartScrape,
   minLikes, setMinLikes, scrapeDetail, setScrapeDetail,
   scraperProvider = "playwright",
+  // Date filter  ← tambah
+  dateFrom, setDateFrom, dateTo, setDateTo,
   // Sentiment
   sentimentStatus, onSentimentAnalysisStarted,
   // Detail
@@ -103,6 +105,72 @@ export const Sidebar = ({ lang = "en",
           <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>
             ⚠️ Only posts with ≥ {minLikes.toLocaleString()} likes
           </div>
+        )}
+      </div>
+
+      {/* Date Filter */}
+      <div className="card" style={{ padding: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+          📅 Date Filter
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div>
+            <label style={{ fontSize: 10, color: "#94a3b8", display: "block", marginBottom: 3 }}>From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              disabled={scraping}
+              style={{
+                width: "100%", padding: "5px 8px", fontSize: 12,
+                background: "#1e293b", border: "1px solid #334155",
+                color: dateFrom ? "#e2e8f0" : "#475569", borderRadius: 4,
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 10, color: "#94a3b8", display: "block", marginBottom: 3 }}>To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              disabled={scraping}
+              style={{
+                width: "100%", padding: "5px 8px", fontSize: 12,
+                background: "#1e293b", border: "1px solid #334155",
+                color: dateTo ? "#e2e8f0" : "#475569", borderRadius: 4,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Validation warning */}
+        {dateFrom && dateTo && dateFrom > dateTo && (
+          <div style={{ fontSize: 10, color: "#ef4444", marginTop: 6 }}>
+            ⚠️ "From" must be before "To"
+          </div>
+        )}
+
+        {/* Active filter badge */}
+        {(dateFrom || dateTo) && !(dateFrom && dateTo && dateFrom > dateTo) && (
+          <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 6 }}>
+            🗓 {dateFrom || "∞"} → {dateTo || "∞"}
+          </div>
+        )}
+
+        {/* Clear button */}
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(""); setDateTo(""); }}
+            disabled={scraping}
+            style={{
+              marginTop: 8, width: "100%", padding: "4px 0", fontSize: 10,
+              background: "transparent", border: "1px solid #334155",
+              color: "#94a3b8", borderRadius: 4, cursor: "pointer",
+            }}
+          >
+            ✕ Clear dates
+          </button>
         )}
       </div>
 

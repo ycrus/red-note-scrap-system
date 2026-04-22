@@ -7,10 +7,12 @@ from database import (
     db_update_detail, db_get_undetailed_ids, db_save_comments
 )
 from sentiment import analyze_sentiment
-
+from utils.date import normalize_rednote_date
+from utils.like import format_likes
 
 # ── SEARCH SCRAPER ───────────────────────────────────
-def run_scraper(keywords, max_posts, cookies, auto_sentiment=False, min_likes=0, scrape_detail=False):
+def run_scraper(keywords, max_posts, cookies, auto_sentiment=False, min_likes=0, scrape_detail=False,
+                date_from=None, date_to=None):
     state.scrape_results = []
     state.is_scraping = True
     session_id = db_save_session(keywords, max_posts)
@@ -208,14 +210,28 @@ def run_scraper(keywords, max_posts, cookies, auto_sentiment=False, min_likes=0,
                                 sentiment, score = (None, None)
                                 if auto_sentiment:
                                     sentiment, score = analyze_sentiment(title)
+                                
+                                liked = format_likes(likes)
+                                normalized_date = normalize_rednote_date(date)
+                                state.push_log(f"   🗓 raw='{date}' → normalized='{normalized_date}' | filter={date_from}~{date_to}")
+                                
+                                if date_from or date_to:
+                                    if not normalized_date:
+                                        # Tidak ada tanggal → skip kalau filter aktif
+                                        continue
+                                    if date_from and normalized_date < date_from:
+                                        continue
+                                    if date_to and normalized_date > date_to:
+                                        continue
 
                                 row = {
                                     "keyword": keyword,
                                     "title": title.strip(),
                                     "link": f"https://www.rednote.com{link}",
                                     "author": author.strip() if author else None,
-                                    "likes": likes.strip() if likes else None,
-                                    "date": date.strip() if date else None,
+                                    "likes": liked["value"],
+                                    # "likes": likes.strip() if likes else None,
+                                    "date": normalized_date,
                                     "sentiment": sentiment,
                                     "sentiment_score": score,
                                 }

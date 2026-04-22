@@ -65,6 +65,9 @@ export default function App() {
   const handleChangeLang = (code) => { setLang(code); setLangState(code); };
   const handleProviderChange = (p) => setScraperProvider(p);
 
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo]     = useState("");
+
   // ── Init ──────────────────────────────────────────
   useEffect(() => {
     getCookies().then(d => { if (d.count > 0) { setCookieKeys(d.keys); setCookieStatus("ok"); } }).catch(() => {});
@@ -121,7 +124,7 @@ export default function App() {
     setLogs([]); setResults([]); setScraping(true); setTab("logs");
 
     try {
-      await startScrape(kws, maxPosts, autoSentiment, minLikes, scrapeDetail);
+      await startScrape(kws, maxPosts, autoSentiment, minLikes, scrapeDetail, dateFrom, dateTo);
       subscribeToStream((item) => {
         setLogs(prev => [...prev, { type: "done", message: `✅ Done! ${item.total} results collected.`, time: new Date().toLocaleTimeString(), id: Date.now() }]);
         setScraping(false);
@@ -251,6 +254,8 @@ export default function App() {
           onBotDetectionStarted={handleBotDetectionStarted}
           results={results}
           lang={lang}
+          dateFrom={dateFrom} setDateFrom={setDateFrom}  
+          dateTo={dateTo}     setDateTo={setDateTo} 
         />
 
         <div style={{ display: "flex", flexDirection: "column" }}>

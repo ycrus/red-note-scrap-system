@@ -4,6 +4,7 @@ import json
 import state
 from scraper import run_scraper, run_detail_scraper
 import os
+from datetime import datetime
 
 def get_scraper():
     """Return scraper function based on SCRAPER_PROVIDER env var."""
@@ -80,37 +81,62 @@ def start_scrape():
     if state.is_scraping:
         return jsonify({"error": "Scraping already in progress"}), 400
 
-    provider = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
-    if provider != "apify" and not state.current_cookies:
+    provider_name = os.getenv("SCRAPER_PROVIDER", "playwright").lower()
+    if provider_name != "apify" and not state.current_cookies:
         return jsonify({"error": "No cookies set!"}), 400
 
     body = request.json or {}
     keywords = [k.strip() for k in body.get("keywords", []) if k.strip()]
-    max_posts = int(body.get("max_posts", 50))
+
+    def safe_int(val, default):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
+    def safe_date(val):
+        """Validate and return YYYY-MM-DD string or None."""
+        if not val:
+            return None
+        try:
+            datetime.strptime(val, "%Y-%m-%d")
+            return val
+        except ValueError:
+            return None
+
+    max_posts      = safe_int(body.get("max_posts"), 50)
+    min_likes      = safe_int(body.get("min_likes"), 0)
     auto_sentiment = bool(body.get("auto_sentiment", False))
-    min_likes = int(body.get("min_likes", 0))
-    scrape_detail = bool(body.get("scrape_detail", False))
+    scrape_detail  = bool(body.get("scrape_detail", False))
+    date_from      = safe_date(body.get("date_from"))   
+    date_to        = safe_date(body.get("date_to"))    
 
     if not keywords:
         return jsonify({"error": "No keywords provided"}), 400
 
+    # Validasi range
+    if date_from and date_to and date_from > date_to:
+        return jsonify({"error": "date_from must be before date_to"}), 400
+
     scraper_fn, provider = get_scraper()
     state.push_log(f"   Provider: {provider}")
-
+    if date_from or date_to:
+        state.push_log(f"   Date filter: {date_from or '∞'} → {date_to or '∞'}")
     clear_queue()
+
     if provider == "apify":
         thread = threading.Thread(
             target=scraper_fn,
-            args=(keywords, max_posts, auto_sentiment, min_likes)
+            args=(keywords, max_posts, auto_sentiment, min_likes, scrape_detail, date_from, date_to)
         )
     else:
         thread = threading.Thread(
             target=scraper_fn,
-            args=(keywords, max_posts, list(state.current_cookies), auto_sentiment, min_likes, scrape_detail)
+            args=(keywords, max_posts, list(state.current_cookies), auto_sentiment, min_likes, scrape_detail, date_from, date_to)
         )
     thread.daemon = True
     thread.start()
-    return jsonify({"status": "started", "keywords": keywords})
+    return jsonify({"status": "started", "keywords": keywords, "date_from": date_from, "date_to": date_to})
 
 
 @scrape_bp.route("/api/scrape/detail", methods=["POST"])

@@ -129,7 +129,7 @@ def run_apify_scraper(keywords, max_posts, auto_sentiment=False, min_likes=0):
     state.scrape_results = []
     state.is_scraping = True
     session_id = db_save_session(keywords, max_posts)
-    state.push_log(f"📦 Session #{session_id} created in database")
+    state.push_log(f"📦 Batch #{session_id} created in database")
     state.push_log(f"🌐 Using Apify provider: {APIFY_ACTOR_ID}")
 
     if not is_configured():

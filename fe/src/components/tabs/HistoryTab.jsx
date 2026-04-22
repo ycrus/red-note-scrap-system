@@ -34,7 +34,7 @@ export const HistoryTab = ({ history, onOpenDetail }) => {
               transition: "all .15s"
             }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>Session #{s.id}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>Batch #{s.id}</span>
               <span style={{ fontSize: 10, color: s.finished_at ? "#16a34a" : "#f59e0b" }}>
                 {s.finished_at ? "✅ Done" : "⏳ Running"}
               </span>
